@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { Worktree, ChangedFile } from '../types/index.js';
 import { api } from '../api/client.js';
 import { extractTicketIdFromBranch } from '../utils/linear.js';
+import { getFileIcon } from '../utils/fileIcons.js';
 import { DiffViewer } from './DiffViewer.js';
 import { CommitPanel } from './CommitPanel.js';
 
@@ -53,7 +54,14 @@ export function ReviewTab({ selectedWorktree }: ReviewTabProps) {
                 onClick={() => setSelectedFile(f.file)}
               >
                 <span className={`file-status status-${f.status}`}>{f.status[0].toUpperCase()}</span>
-                {f.file}
+                {getFileIcon(f.file)}
+                <span className="file-name">{f.file}</span>
+                {(f.additions > 0 || f.deletions > 0) && (
+                  <span className="file-stats">
+                    {f.additions > 0 && <span className="file-stat-add">+{f.additions}</span>}
+                    {f.deletions > 0 && <span className="file-stat-del">-{f.deletions}</span>}
+                  </span>
+                )}
               </li>
             ))}
           </ul>

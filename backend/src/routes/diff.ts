@@ -21,7 +21,29 @@ router.get('/:worktreeId', async (req: Request, res: Response) => {
       ...status.deleted.map((f) => ({ file: f, status: 'deleted' })),
       ...status.renamed.map((f) => ({ file: f.to ?? f.from, status: 'renamed' })),
     ];
-    res.json({ branch: wt.branch, files });
+
+    // Get line stats (additions/deletions) per file
+    const statsMap = new Map<string, { additions: number; deletions: number }>();
+    try {
+      const numstat = await git.diff(['HEAD', '--numstat']);
+      for (const line of numstat.split('\n')) {
+        const match = line.match(/^(\d+|-)\t(\d+|-)\t(.+)$/);
+        if (match) {
+          statsMap.set(match[3], {
+            additions: match[1] === '-' ? 0 : parseInt(match[1], 10),
+            deletions: match[2] === '-' ? 0 : parseInt(match[2], 10),
+          });
+        }
+      }
+    } catch { /* stats are optional */ }
+
+    const filesWithStats = files.map((f) => ({
+      ...f,
+      additions: statsMap.get(f.file)?.additions ?? 0,
+      deletions: statsMap.get(f.file)?.deletions ?? 0,
+    }));
+
+    res.json({ branch: wt.branch, files: filesWithStats });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }

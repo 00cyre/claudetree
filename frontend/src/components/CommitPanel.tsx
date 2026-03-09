@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { ChangedFile } from '../types/index.js';
 import { api } from '../api/client.js';
+import { getFileIcon } from '../utils/fileIcons.js';
 
 interface CommitPanelProps {
   worktreeId: string;
@@ -66,7 +67,8 @@ export function CommitPanel({ worktreeId, files, onCommit, linearIssueId }: Comm
               onChange={() => toggleFile(f.file)}
             />
             <span className={`file-status status-${f.status}`}>{f.status[0].toUpperCase()}</span>
-            {f.file}
+            {getFileIcon(f.file)}
+            <span className="commit-file-name">{f.file}</span>
           </label>
         ))}
       </div>

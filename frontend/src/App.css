@@ -1,15 +1,19 @@
 :root {
-  --bg-primary: #0d1117;
-  --bg-secondary: #161b22;
-  --bg-tertiary: #1c2128;
-  --border: #30363d;
-  --text-primary: #e6edf3;
-  --text-secondary: #8b949e;
-  --accent: #58a6ff;
-  --accent-hover: #79c0ff;
-  --danger: #f85149;
-  --success: #3fb950;
-  --warning: #d29922;
+  --bg-primary: #1e1e2e;
+  --bg-secondary: #181825;
+  --bg-tertiary: #272739;
+  --border: #363649;
+  --text-primary: #cdd6f4;
+  --text-secondary: #6c7086;
+  --accent: #89b4fa;
+  --accent-hover: #b4d0fb;
+  --danger: #f38ba8;
+  --success: #a6e3a1;
+  --warning: #f9e2af;
+  --diff-add-bg: rgba(166, 227, 161, 0.10);
+  --diff-add-text: #a6e3a1;
+  --diff-remove-bg: rgba(243, 139, 168, 0.10);
+  --diff-remove-text: #f38ba8;
 }
 
 * {
@@ -228,13 +232,22 @@ body {
 .btn-commit {
   width: 100%;
   margin-top: 8px;
-  background: var(--success);
-  border-color: var(--success);
-  color: #fff;
+  background: #89b4fa;
+  border-color: #89b4fa;
+  color: #1e1e2e;
+  font-weight: 600;
 }
 
 .btn-commit:hover {
-  opacity: 0.9;
+  background: #b4d0fb;
+  border-color: #b4d0fb;
+}
+
+.btn-commit:disabled {
+  background: var(--bg-tertiary);
+  border-color: var(--border);
+  color: var(--text-secondary);
+  opacity: 0.6;
 }
 
 /* Features Tab */
@@ -317,6 +330,7 @@ body {
   border-right: 1px solid var(--border);
   padding: 12px;
   overflow-y: auto;
+  background: var(--bg-secondary);
 }
 
 .review-files h4 {
@@ -338,6 +352,7 @@ body {
   border-left: 1px solid var(--border);
   padding: 12px;
   overflow-y: auto;
+  background: var(--bg-secondary);
 }
 
 .review-placeholder,
@@ -357,12 +372,12 @@ body {
 .file-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  border-radius: 4px;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 6px;
   cursor: pointer;
-  font-size: 13px;
-  font-family: monospace;
+  font-size: 12px;
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
 }
 
 .file-item:hover {
@@ -372,6 +387,31 @@ body {
 .file-item.active {
   background: var(--bg-tertiary);
   color: var(--accent);
+}
+
+.file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.file-stats {
+  display: flex;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.file-stat-add {
+  color: var(--success);
+}
+
+.file-stat-del {
+  color: var(--danger);
 }
 
 .file-status {
@@ -396,37 +436,45 @@ body {
 .diff-header {
   padding: 8px 16px;
   border-bottom: 1px solid var(--border);
-  font-family: monospace;
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
   font-size: 13px;
   color: var(--text-secondary);
+  background: var(--bg-secondary);
 }
 
 .diff-content {
   flex: 1;
   overflow: auto;
-  padding: 8px 0;
+  padding: 4px 0;
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.6;
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
 }
 
 .diff-line {
   padding: 0 16px;
   white-space: pre;
+  border-left: 3px solid transparent;
 }
 
 .diff-add {
-  background: rgba(63, 185, 80, 0.15);
-  color: var(--success);
+  background: var(--diff-add-bg);
+  color: var(--diff-add-text);
+  border-left-color: var(--success);
 }
 
 .diff-remove {
-  background: rgba(248, 81, 73, 0.15);
-  color: var(--danger);
+  background: var(--diff-remove-bg);
+  color: var(--diff-remove-text);
+  border-left-color: var(--danger);
 }
 
 .diff-hunk {
   color: var(--accent);
-  padding-top: 8px;
+  padding-top: 12px;
+  padding-bottom: 4px;
+  opacity: 0.8;
+  font-style: italic;
 }
 
 .diff-loading,
@@ -455,9 +503,16 @@ body {
 .commit-toggle-all {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 13px;
+  gap: 6px;
+  font-size: 12px;
   cursor: pointer;
+}
+
+.commit-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .commit-toggle-all {

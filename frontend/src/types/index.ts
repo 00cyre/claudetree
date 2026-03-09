@@ -17,6 +17,8 @@ export interface Worktree {
 export interface ChangedFile {
   file: string;
   status: 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed';
+  additions: number;
+  deletions: number;
 }
 
 export interface DiffResult {
