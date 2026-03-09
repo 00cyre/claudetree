@@ -548,3 +548,256 @@ body {
   gap: 8px;
   margin-top: 16px;
 }
+
+.modal-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 6px;
+}
+
+/* Linear badge in sidebar */
+.worktree-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+}
+
+.linear-badge {
+  font-size: 10px;
+  font-family: monospace;
+  color: var(--accent);
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.linear-badge-header {
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--accent);
+  background: rgba(88, 166, 255, 0.1);
+  padding: 2px 8px;
+  border-radius: 12px;
+  margin-left: 8px;
+}
+
+/* Sidebar footer */
+.sidebar-section-grow {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.sidebar-footer {
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.linear-setup-btn {
+  width: 100%;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.linear-setup-btn.connected {
+  color: var(--success);
+  border-color: rgba(63, 185, 80, 0.3);
+}
+
+/* Features body split layout — side-by-side: 70% terminal, 30% ticket */
+.features-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.features-body-split {
+  flex-direction: row;
+}
+
+.features-terminal-section {
+  flex: 7;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.features-terminal-section .terminal-shell {
+  flex: 1;
+  min-height: 0;
+}
+
+.features-ticket-section {
+  flex: 3;
+  min-width: 0;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.features-body .terminal-shell {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Linear ticket panel */
+.linear-ticket-panel {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+}
+
+.linear-ticket-loading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.linear-ticket-error {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.ticket-error-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--danger);
+  margin-bottom: 8px;
+}
+
+.ticket-error-message {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.ticket-error-link {
+  font-size: 13px;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.ticket-error-link:hover {
+  text-decoration: underline;
+}
+
+.ticket-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.ticket-identifier {
+  font-size: 12px;
+  font-family: monospace;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.ticket-identifier:hover {
+  text-decoration: underline;
+}
+
+.ticket-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+.ticket-meta {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.ticket-status-badge {
+  font-size: 11px;
+  padding: 2px 10px;
+  border-radius: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.ticket-priority-badge {
+  font-size: 11px;
+  padding: 2px 10px;
+  border-radius: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.ticket-field {
+  margin-bottom: 12px;
+}
+
+.ticket-field-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.ticket-field-value {
+  font-size: 13px;
+}
+
+.ticket-labels {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.ticket-label-chip {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.ticket-description {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.ticket-description-content {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Commit prefix hint */
+.commit-prefix-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.commit-prefix-hint code {
+  color: var(--accent);
+  font-size: 11px;
+}

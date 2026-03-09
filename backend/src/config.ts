@@ -12,8 +12,14 @@ export interface Project {
   worktreeBase: string;
 }
 
+export interface WorktreeLink {
+  linearIssueId: string;
+}
+
 export interface AppConfig {
   projects: Project[];
+  linearApiKey?: string;
+  worktreeLinks?: Record<string, WorktreeLink>;
 }
 
 function defaultConfig(): AppConfig {
@@ -41,4 +47,24 @@ export function saveConfig(config: AppConfig): void {
     mkdirSync(CONFIG_DIR, { recursive: true });
   }
   writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+}
+
+export function getWorktreeLink(worktreePath: string): WorktreeLink | undefined {
+  const config = loadConfig();
+  return config.worktreeLinks?.[worktreePath];
+}
+
+export function setWorktreeLink(worktreePath: string, link: WorktreeLink): void {
+  const config = loadConfig();
+  if (!config.worktreeLinks) config.worktreeLinks = {};
+  config.worktreeLinks[worktreePath] = link;
+  saveConfig(config);
+}
+
+export function removeWorktreeLink(worktreePath: string): void {
+  const config = loadConfig();
+  if (config.worktreeLinks) {
+    delete config.worktreeLinks[worktreePath];
+    saveConfig(config);
+  }
 }

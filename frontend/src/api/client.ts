@@ -1,4 +1,4 @@
-import type { Project, Worktree, DiffResult, FileDiff } from '../types/index.js';
+import type { Project, Worktree, DiffResult, FileDiff, LinearIssue, LinearStatus } from '../types/index.js';
 
 const BASE = '/api';
 
@@ -45,5 +45,28 @@ export const api = {
     request<{ ok: boolean; summary: unknown }>(`/commit/${worktreeId}`, {
       method: 'POST',
       body: JSON.stringify({ message, files }),
+    }),
+
+  getLinearStatus: () =>
+    request<LinearStatus>('/linear/status'),
+
+  setupLinear: (apiKey: string) =>
+    request<{ ok: boolean }>('/linear/setup', {
+      method: 'POST',
+      body: JSON.stringify({ apiKey }),
+    }),
+
+  getLinearIssue: (issueId: string) =>
+    request<LinearIssue>(`/linear/issues/${issueId}`),
+
+  linkWorktree: (projectId: string, worktreeId: string, linearIssueId: string) =>
+    request<{ ok: boolean }>(`/worktrees/${projectId}/${worktreeId}/link`, {
+      method: 'POST',
+      body: JSON.stringify({ linearIssueId }),
+    }),
+
+  unlinkWorktree: (projectId: string, worktreeId: string) =>
+    request<{ ok: boolean }>(`/worktrees/${projectId}/${worktreeId}/link`, {
+      method: 'DELETE',
     }),
 };

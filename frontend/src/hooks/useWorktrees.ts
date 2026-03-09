@@ -48,9 +48,13 @@ export function useWorktrees() {
     setSelectedProject(project);
   };
 
-  const createWorktree = async (name: string) => {
+  const createWorktree = async (name: string, linearIssueId?: string) => {
     if (!selectedProject) return;
     const wt = await api.createWorktree(selectedProject.id, name);
+    if (linearIssueId) {
+      await api.linkWorktree(selectedProject.id, wt.id, linearIssueId);
+      wt.linearIssueId = linearIssueId;
+    }
     setWorktrees((prev) => [...prev, wt]);
     setSelectedWorktree(wt);
   };

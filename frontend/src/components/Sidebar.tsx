@@ -1,4 +1,5 @@
-import type { Project, Worktree } from '../types/index.js';
+import type { Project, Worktree, LinearStatus } from '../types/index.js';
+import { extractTicketIdFromBranch } from '../utils/linear.js';
 
 interface SidebarProps {
   projects: Project[];
@@ -10,6 +11,8 @@ interface SidebarProps {
   onNewWorktree: () => void;
   onDeleteWorktree: (id: string) => void;
   loading: boolean;
+  linearStatus: LinearStatus;
+  onLinearSetup: () => void;
 }
 
 export function Sidebar({
@@ -22,6 +25,8 @@ export function Sidebar({
   onNewWorktree,
   onDeleteWorktree,
   loading,
+  linearStatus,
+  onLinearSetup,
 }: SidebarProps) {
   return (
     <aside className="sidebar">
@@ -42,7 +47,7 @@ export function Sidebar({
         </select>
       </div>
 
-      <div className="sidebar-section">
+      <div className="sidebar-section sidebar-section-grow">
         <div className="sidebar-header">
           <label className="sidebar-label">Worktrees</label>
           <button className="btn btn-sm" onClick={onNewWorktree}>+ New</button>
@@ -54,13 +59,20 @@ export function Sidebar({
           <div className="sidebar-empty">No worktrees</div>
         ) : (
           <ul className="worktree-list">
-            {worktrees.map((wt) => (
+            {worktrees.map((wt) => {
+              const ticketId = wt.linearIssueId ?? extractTicketIdFromBranch(wt.name);
+              return (
               <li
                 key={wt.id}
                 className={`worktree-item ${selectedWorktree?.id === wt.id ? 'active' : ''}`}
                 onClick={() => onSelectWorktree(wt)}
               >
-                <span className="worktree-name">{wt.name}</span>
+                <div className="worktree-item-info">
+                  <span className="worktree-name">{wt.name}</span>
+                  {ticketId && (
+                    <span className="linear-badge" title={ticketId}>{ticketId}</span>
+                  )}
+                </div>
                 <button
                   className="btn-delete"
                   onClick={(e) => { e.stopPropagation(); onDeleteWorktree(wt.id); }}
@@ -69,9 +81,19 @@ export function Sidebar({
                   x
                 </button>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
+      </div>
+
+      <div className="sidebar-footer">
+        <button
+          className={`btn btn-sm linear-setup-btn ${linearStatus.connected ? 'connected' : ''}`}
+          onClick={onLinearSetup}
+        >
+          {linearStatus.connected ? 'Linear connected' : 'Connect Linear'}
+        </button>
       </div>
     </aside>
   );

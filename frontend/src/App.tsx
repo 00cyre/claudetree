@@ -1,15 +1,19 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar.js';
 import { FeaturesTab } from './components/FeaturesTab.js';
 import { ReviewTab } from './components/ReviewTab.js';
 import { NewWorktreeModal } from './components/NewWorktreeModal.js';
+import { LinearSetupModal } from './components/LinearSetupModal.js';
 import { useWorktrees } from './hooks/useWorktrees.js';
+import { useLinear } from './hooks/useLinear.js';
+import { api } from './api/client.js';
 import type { Tab } from './types/index.js';
 import './App.css';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<Tab>('features');
   const [showModal, setShowModal] = useState(false);
+  const [showLinearSetup, setShowLinearSetup] = useState(false);
 
   const {
     projects,
@@ -22,7 +26,17 @@ export function App() {
     addProject,
     createWorktree,
     deleteWorktree,
+    refresh,
   } = useWorktrees();
+
+  const { status: linearStatus, issue, loadingIssue, issueError, effectiveTicketId, setupLinear } = useLinear(selectedWorktree);
+
+  const handleUnlink = useCallback(async () => {
+    if (!selectedProject || !selectedWorktree) return;
+    await api.unlinkWorktree(selectedProject.id, selectedWorktree.id);
+    await refresh();
+    setSelectedWorktree((prev) => prev ? { ...prev, linearIssueId: undefined } : null);
+  }, [selectedProject, selectedWorktree, refresh, setSelectedWorktree]);
 
   return (
     <div className="app">
@@ -55,11 +69,20 @@ export function App() {
           onNewWorktree={() => setShowModal(true)}
           onDeleteWorktree={deleteWorktree}
           loading={loading}
+          linearStatus={linearStatus}
+          onLinearSetup={() => setShowLinearSetup(true)}
         />
 
         <main className="content">
           {activeTab === 'features' ? (
-            <FeaturesTab selectedWorktree={selectedWorktree} />
+            <FeaturesTab
+              selectedWorktree={selectedWorktree}
+              issue={issue}
+              loadingIssue={loadingIssue}
+              issueError={issueError}
+              effectiveTicketId={effectiveTicketId}
+              onUnlink={handleUnlink}
+            />
           ) : (
             <ReviewTab selectedWorktree={selectedWorktree} />
           )}
@@ -72,6 +95,14 @@ export function App() {
           onCreate={createWorktree}
           onAddProject={addProject}
           hasProject={!!selectedProject}
+          linearConnected={linearStatus.connected}
+        />
+      )}
+
+      {showLinearSetup && (
+        <LinearSetupModal
+          onClose={() => setShowLinearSetup(false)}
+          onSetup={setupLinear}
         />
       )}
     </div>

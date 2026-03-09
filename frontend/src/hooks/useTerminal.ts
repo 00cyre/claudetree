@@ -154,8 +154,14 @@ export function useTerminal(worktreeId: string | null, container: HTMLDivElement
     const handleResize = () => fitAddon.fit();
     window.addEventListener('resize', handleResize);
 
+    const resizeObserver = new ResizeObserver(() => {
+      fitAddon.fit();
+    });
+    resizeObserver.observe(container);
+
     return () => {
       disposed = true;
+      resizeObserver.disconnect();
       window.removeEventListener('resize', handleResize);
       ws.close();
       term.dispose();

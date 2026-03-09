@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 import { existsSync, mkdirSync, cpSync } from 'fs';
 import { join } from 'path';
 import simpleGit from 'simple-git';
-import { loadConfig, saveConfig } from '../config.js';
+import { loadConfig, saveConfig, getWorktreeLink, setWorktreeLink, removeWorktreeLink } from '../config.js';
 
 const router = Router();
 
@@ -13,6 +13,7 @@ interface Worktree {
   path: string;
   branch: string;
   projectId: string;
+  linearIssueId?: string;
 }
 
 // In-memory worktree registry (persists while server runs)
@@ -20,6 +21,42 @@ const worktreeRegistry: Map<string, Worktree> = new Map();
 
 export function getWorktree(id: string): Worktree | undefined {
   return worktreeRegistry.get(id);
+}
+
+/**
+ * Discover all worktrees across all projects and populate the registry.
+ * Returns worktrees for pre-initializing terminal sessions.
+ */
+export async function discoverAllWorktrees(): Promise<Worktree[]> {
+  const config = loadConfig();
+  const allWorktrees: Worktree[] = [];
+
+  for (const project of config.projects) {
+    if (!existsSync(project.path)) continue;
+    try {
+      const git = simpleGit(project.path);
+      const result = await git.raw(['worktree', 'list', '--porcelain']);
+      const blocks = result.split('\n\n').filter(Boolean);
+
+      for (const block of blocks) {
+        const lines = block.split('\n');
+        const wtPath = lines.find((l) => l.startsWith('worktree '))?.replace('worktree ', '');
+        const branch = lines.find((l) => l.startsWith('branch '))?.replace('branch refs/heads/', '');
+        if (wtPath && branch && wtPath !== project.path) {
+          const existing = Array.from(worktreeRegistry.values()).find((w) => w.path === wtPath);
+          const id = existing?.id || randomUUID();
+          const link = getWorktreeLink(wtPath);
+          const wt: Worktree = { id, name: branch, path: wtPath, branch, projectId: project.id, linearIssueId: link?.linearIssueId };
+          worktreeRegistry.set(id, wt);
+          allWorktrees.push(wt);
+        }
+      }
+    } catch (err) {
+      console.error(`Failed to discover worktrees for project ${project.name}:`, err);
+    }
+  }
+
+  return allWorktrees;
 }
 
 router.get('/:projectId', async (req: Request, res: Response) => {
@@ -44,7 +81,8 @@ router.get('/:projectId', async (req: Request, res: Response) => {
       if (wtPath && branch && wtPath !== project.path) {
         const existing = Array.from(worktreeRegistry.values()).find((w) => w.path === wtPath);
         const id = existing?.id || randomUUID();
-        const wt: Worktree = { id, name: branch, path: wtPath, branch, projectId };
+        const link = getWorktreeLink(wtPath);
+        const wt: Worktree = { id, name: branch, path: wtPath, branch, projectId, linearIssueId: link?.linearIssueId };
         worktreeRegistry.set(id, wt);
         worktrees.push(wt);
       }
@@ -92,6 +130,11 @@ router.post('/:projectId', async (req: Request, res: Response) => {
     const id = randomUUID();
     const wt: Worktree = { id, name, path: wtPath, branch: name, projectId };
     worktreeRegistry.set(id, wt);
+
+    // Pre-initialize Claude Code for the new worktree (dynamic import to avoid circular dep)
+    const { preInitializeSessions } = await import('../terminal/pty.js');
+    preInitializeSessions([{ id, path: wtPath }]);
+
     res.status(201).json(wt);
   } catch (err) {
     res.status(500).json({ error: String(err) });
@@ -114,13 +157,50 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 
   try {
+    const { killSession } = await import('../terminal/pty.js');
+    killSession(id);
     const git = simpleGit(project.path);
     await git.raw(['worktree', 'remove', wt.path, '--force']);
     worktreeRegistry.delete(id);
+    removeWorktreeLink(wt.path);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
+});
+
+router.post('/:projectId/:worktreeId/link', async (req: Request, res: Response) => {
+  const { worktreeId } = req.params;
+  const { linearIssueId } = req.body as { linearIssueId?: string };
+
+  if (!linearIssueId?.trim()) {
+    res.status(400).json({ error: 'linearIssueId is required' });
+    return;
+  }
+
+  const wt = worktreeRegistry.get(worktreeId);
+  if (!wt) {
+    res.status(404).json({ error: 'Worktree not found' });
+    return;
+  }
+
+  setWorktreeLink(wt.path, { linearIssueId: linearIssueId.trim() });
+  wt.linearIssueId = linearIssueId.trim();
+  res.json({ ok: true });
+});
+
+router.delete('/:projectId/:worktreeId/link', async (req: Request, res: Response) => {
+  const { worktreeId } = req.params;
+
+  const wt = worktreeRegistry.get(worktreeId);
+  if (!wt) {
+    res.status(404).json({ error: 'Worktree not found' });
+    return;
+  }
+
+  removeWorktreeLink(wt.path);
+  delete wt.linearIssueId;
+  res.json({ ok: true });
 });
 
 export default router;

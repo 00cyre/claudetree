@@ -6,9 +6,10 @@ interface CommitPanelProps {
   worktreeId: string;
   files: ChangedFile[];
   onCommit: () => void;
+  linearIssueId?: string;
 }
 
-export function CommitPanel({ worktreeId, files, onCommit }: CommitPanelProps) {
+export function CommitPanel({ worktreeId, files, onCommit, linearIssueId }: CommitPanelProps) {
   const [message, setMessage] = useState('');
   const [staged, setStaged] = useState<Set<string>>(new Set());
   const [committing, setCommitting] = useState(false);
@@ -69,6 +70,11 @@ export function CommitPanel({ worktreeId, files, onCommit }: CommitPanelProps) {
           </label>
         ))}
       </div>
+      {linearIssueId && (
+        <div className="commit-prefix-hint">
+          Commits will be prefixed with <code>{linearIssueId}:</code>
+        </div>
+      )}
       <textarea
         className="commit-message"
         placeholder="Commit message..."

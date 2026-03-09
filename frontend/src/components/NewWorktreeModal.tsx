@@ -2,13 +2,25 @@ import { useState } from 'react';
 
 interface NewWorktreeModalProps {
   onClose: () => void;
-  onCreate: (name: string) => Promise<void>;
+  onCreate: (name: string, linearIssueId?: string) => Promise<void>;
   onAddProject: (path: string) => Promise<void>;
   hasProject: boolean;
+  linearConnected: boolean;
 }
 
-export function NewWorktreeModal({ onClose, onCreate, onAddProject, hasProject }: NewWorktreeModalProps) {
+function extractIssueId(input: string): string {
+  const trimmed = input.trim();
+  // Extract from Linear URL: https://linear.app/team/issue/PROJ-123/slug
+  const urlMatch = trimmed.match(/\/issue\/([\w]+-\d+)/);
+  if (urlMatch) return urlMatch[1];
+  // Already an identifier like PROJ-123
+  if (/^[\w]+-\d+$/.test(trimmed)) return trimmed;
+  return trimmed;
+}
+
+export function NewWorktreeModal({ onClose, onCreate, onAddProject, hasProject, linearConnected }: NewWorktreeModalProps) {
   const [name, setName] = useState('');
+  const [linearIssueId, setLinearIssueId] = useState('');
   const [projectPath, setProjectPath] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -18,7 +30,8 @@ export function NewWorktreeModal({ onClose, onCreate, onAddProject, hasProject }
     setLoading(true);
     setError('');
     try {
-      await onCreate(name.trim());
+      const issueId = linearIssueId.trim() ? extractIssueId(linearIssueId) : undefined;
+      await onCreate(name.trim(), issueId);
       onClose();
     } catch (err) {
       setError(String(err));
@@ -70,6 +83,18 @@ export function NewWorktreeModal({ onClose, onCreate, onAddProject, hasProject }
             onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
           />
         </div>
+
+        {linearConnected && (
+          <div className="modal-section">
+            <label>Linear issue (optional)</label>
+            <input
+              type="text"
+              value={linearIssueId}
+              onChange={(e) => setLinearIssueId(e.target.value)}
+              placeholder="PROJ-123 or paste Linear URL"
+            />
+          </div>
+        )}
 
         {error && <div className="modal-error">{error}</div>}
 

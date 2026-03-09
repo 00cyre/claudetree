@@ -5,6 +5,11 @@ import * as pty from 'node-pty';
 import { WebSocketServer, WebSocket } from 'ws';
 import { getWorktree } from '../routes/worktrees.js';
 
+export interface WorktreeInfo {
+  id: string;
+  path: string;
+}
+
 interface PtySession {
   term: pty.IPty;
   clients: Set<WebSocket>;
@@ -44,9 +49,13 @@ function resolveShell(): string {
 }
 
 function getTerminalEnv(): Record<string, string> {
-  return Object.fromEntries(
+  const env = Object.fromEntries(
     Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
   );
+  env.TERM = 'xterm-256color';
+  env.COLORTERM = 'truecolor';
+  env.FORCE_COLOR = '3';
+  return env;
 }
 
 function sendSocketError(ws: WebSocket, message: string): void {
@@ -95,7 +104,7 @@ function createSession(worktreeId: string, cwd: string): PtySession {
 
   // Launch Claude after the shell is ready in the worktree directory.
   setTimeout(() => {
-    term.write('claude\r');
+    term.write('claude --dangerously-skip-permissions\r');
   }, CLAUDE_BOOT_DELAY_MS);
 
   return session;
@@ -167,5 +176,22 @@ export function killSession(worktreeId: string): void {
   if (session) {
     session.term.kill();
     sessions.delete(worktreeId);
+  }
+}
+
+/**
+ * Pre-initialize Claude Code sessions for all given worktrees.
+ * Called on startup so each worktree has its own Claude instance ready.
+ */
+export function preInitializeSessions(worktrees: WorktreeInfo[]): void {
+  for (const wt of worktrees) {
+    if (sessions.has(wt.id)) continue;
+    if (!existsSync(wt.path)) continue;
+    try {
+      createSession(wt.id, wt.path);
+      console.log(`Pre-initialized Claude Code for worktree ${wt.id}`);
+    } catch (err) {
+      console.error(`Failed to pre-initialize terminal for ${wt.id}:`, err);
+    }
   }
 }

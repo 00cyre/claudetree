@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Worktree, ChangedFile } from '../types/index.js';
 import { api } from '../api/client.js';
+import { extractTicketIdFromBranch } from '../utils/linear.js';
 import { DiffViewer } from './DiffViewer.js';
 import { CommitPanel } from './CommitPanel.js';
 
@@ -68,7 +69,12 @@ export function ReviewTab({ selectedWorktree }: ReviewTabProps) {
       </div>
 
       <div className="review-commit">
-        <CommitPanel worktreeId={selectedWorktree.id} files={files} onCommit={loadFiles} />
+        <CommitPanel
+          worktreeId={selectedWorktree.id}
+          files={files}
+          onCommit={loadFiles}
+          linearIssueId={selectedWorktree.linearIssueId ?? extractTicketIdFromBranch(selectedWorktree.name) ?? undefined}
+        />
       </div>
     </div>
   );
