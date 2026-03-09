@@ -263,18 +263,45 @@ body {
   margin-left: 8px;
 }
 
+.terminal-shell,
 .terminal-container {
   flex: 1;
+  min-height: 0;
+}
+
+.terminal-container {
   padding: 4px;
 }
 
-.terminal-placeholder {
+.terminal-shell {
+  position: relative;
+}
+
+.terminal-placeholder,
+.review-placeholder,
+.review-empty {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100%;
   color: var(--text-secondary);
   font-size: 14px;
+}
+
+.terminal-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(26, 26, 46, 0.88);
+  color: var(--text-secondary);
+  font-size: 14px;
+  text-align: center;
+}
+
+.terminal-placeholder {
+  height: 100%;
 }
 
 /* Review Tab */
@@ -314,12 +341,7 @@ body {
 
 .review-placeholder,
 .review-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   height: 100%;
-  color: var(--text-secondary);
-  font-size: 14px;
 }
 
 .review-empty {

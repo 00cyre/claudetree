@@ -1,6 +1,8 @@
+import { existsSync } from 'fs';
+import type { Server } from 'http';
+import { userInfo } from 'os';
 import * as pty from 'node-pty';
 import { WebSocketServer, WebSocket } from 'ws';
-import type { Server } from 'http';
 import { getWorktree } from '../routes/worktrees.js';
 
 interface PtySession {
@@ -9,9 +11,99 @@ interface PtySession {
 }
 
 const sessions: Map<string, PtySession> = new Map();
+const DEFAULT_TERMINAL_COLS = 120;
+const DEFAULT_TERMINAL_ROWS = 30;
+const CLAUDE_BOOT_DELAY_MS = 500;
+
+function resolveShell(): string {
+  const candidateShells = [
+    process.env.SHELL,
+    userInfo().shell,
+    process.platform === 'darwin' ? '/bin/zsh' : undefined,
+    '/bin/bash',
+    'zsh',
+    'bash',
+  ];
+
+  for (const shell of candidateShells) {
+    if (!shell) {
+      continue;
+    }
+
+    if (shell.startsWith('/')) {
+      if (existsSync(shell)) {
+        return shell;
+      }
+      continue;
+    }
+
+    return shell;
+  }
+
+  throw new Error('No usable shell found for terminal session.');
+}
+
+function getTerminalEnv(): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+  );
+}
+
+function sendSocketError(ws: WebSocket, message: string): void {
+  if (ws.readyState !== WebSocket.OPEN) {
+    return;
+  }
+
+  ws.send(JSON.stringify({ source: 'claudetree', type: 'error', message }));
+}
+
+function broadcastToClients(session: PtySession, data: string): void {
+  for (const client of session.clients) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(data);
+    }
+  }
+}
+
+function createSession(worktreeId: string, cwd: string): PtySession {
+  if (!existsSync(cwd)) {
+    throw new Error(`Worktree path does not exist: ${cwd}`);
+  }
+
+  const shell = resolveShell();
+  const term = pty.spawn(shell, [], {
+    name: 'xterm-256color',
+    cols: DEFAULT_TERMINAL_COLS,
+    rows: DEFAULT_TERMINAL_ROWS,
+    cwd,
+    env: getTerminalEnv(),
+  });
+
+  const session: PtySession = { term, clients: new Set() };
+  sessions.set(worktreeId, session);
+
+  term.onData((data: string) => {
+    broadcastToClients(session, data);
+  });
+
+  term.onExit(() => {
+    sessions.delete(worktreeId);
+    for (const client of session.clients) {
+      client.close();
+    }
+  });
+
+  // Launch Claude after the shell is ready in the worktree directory.
+  setTimeout(() => {
+    term.write('claude\r');
+  }, CLAUDE_BOOT_DELAY_MS);
+
+  return session;
+}
 
 export function setupTerminalWebSocket(server: Server): void {
-  const wss = new WebSocketServer({ server, path: undefined });
+  // We route upgrades manually so each socket is upgraded exactly once.
+  const wss = new WebSocketServer({ noServer: true });
 
   // Handle upgrade manually to support path-based routing
   server.on('upgrade', (req, socket, head) => {
@@ -38,37 +130,15 @@ function handleConnection(ws: WebSocket, worktreeId: string): void {
 
   let session = sessions.get(worktreeId);
   if (!session) {
-    const shell = process.platform === 'darwin' ? 'zsh' : 'bash';
-    const term = pty.spawn(shell, [], {
-      name: 'xterm-256color',
-      cols: 120,
-      rows: 30,
-      cwd: wt.path,
-      env: { ...process.env } as Record<string, string>,
-    });
-
-    session = { term, clients: new Set() };
-    sessions.set(worktreeId, session);
-
-    term.onData((data: string) => {
-      for (const client of session!.clients) {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(data);
-        }
-      }
-    });
-
-    term.onExit(() => {
-      sessions.delete(worktreeId);
-      for (const client of session!.clients) {
-        client.close();
-      }
-    });
-
-    // Launch claude in the worktree
-    setTimeout(() => {
-      term.write('claude\r');
-    }, 500);
+    try {
+      session = createSession(worktreeId, wt.path);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Failed to spawn terminal for worktree ${worktreeId}:`, error);
+      sendSocketError(ws, `Terminal spawn failed: ${message}`);
+      ws.close(1011, 'Terminal spawn failed');
+      return;
+    }
   }
 
   session.clients.add(ws);
@@ -78,17 +148,17 @@ function handleConnection(ws: WebSocket, worktreeId: string): void {
     try {
       const parsed = JSON.parse(msg);
       if (parsed.type === 'resize' && parsed.cols && parsed.rows) {
-        session?.term.resize(parsed.cols, parsed.rows);
+        session.term.resize(parsed.cols, parsed.rows);
         return;
       }
     } catch {
       // Not JSON, treat as terminal input
     }
-    session?.term.write(msg);
+    session.term.write(msg);
   });
 
   ws.on('close', () => {
-    session?.clients.delete(ws);
+    session.clients.delete(ws);
   });
 }
 
