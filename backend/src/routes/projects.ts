@@ -12,21 +12,26 @@ router.get('/', (_req: Request, res: Response) => {
 });
 
 router.post('/', (req: Request, res: Response) => {
-  const { path } = req.body as { path: string };
-  if (!path || !existsSync(path)) {
-    res.status(400).json({ error: 'Invalid path' });
-    return;
+  try {
+    const { path } = req.body as { path: string };
+    if (!path || !existsSync(path)) {
+      res.status(400).json({ error: `Path does not exist: ${path}` });
+      return;
+    }
+    const config = loadConfig();
+    const project = {
+      id: randomUUID(),
+      name: basename(path),
+      path,
+      worktreeBase: `${path}/.worktrees`,
+    };
+    config.projects.push(project);
+    saveConfig(config);
+    res.status(201).json(project);
+  } catch (err) {
+    console.error('POST /api/projects error:', err);
+    res.status(500).json({ error: String(err) });
   }
-  const config = loadConfig();
-  const project = {
-    id: randomUUID(),
-    name: basename(path),
-    path,
-    worktreeBase: `${path}/.worktrees`,
-  };
-  config.projects.push(project);
-  saveConfig(config);
-  res.status(201).json(project);
 });
 
 export default router;

@@ -19,8 +19,21 @@ app.use('/api/diff', diffRouter);
 app.use('/api/commit', commitRouter);
 
 const server = createServer(app);
-setupTerminalWebSocket(server);
+
+try {
+  setupTerminalWebSocket(server);
+} catch (err) {
+  console.error('WebSocket/pty setup failed (node-pty may need rebuilding):', err);
+}
 
 server.listen(PORT, () => {
   console.log(`claudetree backend running on http://localhost:${PORT}`);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err);
+});
+
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled rejection:', err);
 });
