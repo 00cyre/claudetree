@@ -71,6 +71,23 @@ router.get('/issues/:issueId', async (req: Request, res: Response) => {
   }
 });
 
+router.get('/issues/:issueId/comments', async (req: Request, res: Response) => {
+  const { issueId } = req.params;
+  const state = linearClient.getStatus();
+
+  if (state.status !== 'connected') {
+    res.status(503).json({ error: 'Linear MCP is not connected', status: state.status });
+    return;
+  }
+
+  try {
+    const comments = await linearClient.getComments(issueId);
+    res.json(comments);
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 router.get('/search', async (req: Request, res: Response) => {
   const query = String(req.query.q ?? '');
   if (!query.trim()) {

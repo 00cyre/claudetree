@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { LinearIssue, LinearStatus, Worktree } from '../types/index.js';
+import type { LinearIssue, LinearComment, LinearStatus, Worktree } from '../types/index.js';
 import { api } from '../api/client.js';
 import { extractTicketIdFromBranch } from '../utils/linear.js';
 
@@ -10,6 +10,7 @@ export function useLinear(selectedWorktree: Worktree | null) {
     status: 'disconnected',
   });
   const [issue, setIssue] = useState<LinearIssue | null>(null);
+  const [comments, setComments] = useState<LinearComment[]>([]);
   const [loadingIssue, setLoadingIssue] = useState(false);
   const [issueError, setIssueError] = useState<string | null>(null);
 
@@ -26,13 +27,13 @@ export function useLinear(selectedWorktree: Worktree | null) {
     refreshStatus();
   }, [refreshStatus]);
 
-  // Effective ticket ID: manual link or extracted from branch name (e.g. atl-4096-foo → atl-4096)
   const effectiveTicketId =
     selectedWorktree?.linearIssueId ?? (selectedWorktree?.name ? extractTicketIdFromBranch(selectedWorktree.name) : null);
 
   useEffect(() => {
     if (!effectiveTicketId) {
       setIssue(null);
+      setComments([]);
       setIssueError(null);
       return;
     }
@@ -41,16 +42,21 @@ export function useLinear(selectedWorktree: Worktree | null) {
     setLoadingIssue(true);
     setIssueError(null);
 
-    api.getLinearIssue(effectiveTicketId)
-      .then((data) => {
+    Promise.all([
+      api.getLinearIssue(effectiveTicketId),
+      api.getLinearComments(effectiveTicketId).catch(() => [] as LinearComment[]),
+    ])
+      .then(([issueData, commentsData]) => {
         if (!cancelled) {
-          setIssue(data);
+          setIssue(issueData);
+          setComments(commentsData);
           setIssueError(null);
         }
       })
       .catch((err) => {
         if (!cancelled) {
           setIssue(null);
+          setComments([]);
           setIssueError(err instanceof Error ? err.message : String(err));
         }
       })
@@ -66,5 +72,5 @@ export function useLinear(selectedWorktree: Worktree | null) {
     await refreshStatus();
   };
 
-  return { status, issue, loadingIssue, issueError, effectiveTicketId, setupLinear, refreshStatus };
+  return { status, issue, comments, loadingIssue, issueError, effectiveTicketId, setupLinear, refreshStatus };
 }

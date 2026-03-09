@@ -1,32 +1,20 @@
 import { TerminalView } from './Terminal.js';
 import { LinearTicketPanel } from './LinearTicketPanel.js';
-import type { Worktree, LinearIssue } from '../types/index.js';
+import type { Worktree, LinearIssue, LinearComment } from '../types/index.js';
 
 interface FeaturesTabProps {
   selectedWorktree: Worktree | null;
   issue: LinearIssue | null;
+  comments: LinearComment[];
   loadingIssue: boolean;
   issueError: string | null;
   effectiveTicketId: string | null;
   onUnlink: () => void;
 }
 
-export function FeaturesTab({ selectedWorktree, issue, loadingIssue, issueError, effectiveTicketId, onUnlink }: FeaturesTabProps) {
+export function FeaturesTab({ selectedWorktree, issue, comments, loadingIssue, issueError, effectiveTicketId, onUnlink }: FeaturesTabProps) {
   return (
     <div className="features-tab">
-      <div className="features-header">
-        {selectedWorktree ? (
-          <h3>
-            {selectedWorktree.name}
-            <span className="branch-badge">{selectedWorktree.branch}</span>
-            {effectiveTicketId && (
-              <span className="linear-badge-header">{effectiveTicketId}</span>
-            )}
-          </h3>
-        ) : (
-          <h3>Select a worktree</h3>
-        )}
-      </div>
       <div className="features-body features-body-split">
         <div className="features-terminal-section">
           <TerminalView worktreeId={selectedWorktree?.id ?? null} />
@@ -39,6 +27,7 @@ export function FeaturesTab({ selectedWorktree, issue, loadingIssue, issueError,
             {!loadingIssue && issue && (
               <LinearTicketPanel
                 issue={issue}
+                comments={comments}
                 onUnlink={selectedWorktree?.linearIssueId ? onUnlink : undefined}
               />
             )}

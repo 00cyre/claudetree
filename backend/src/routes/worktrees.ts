@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { randomUUID } from 'crypto';
+import { createHash } from 'crypto';
 import { existsSync, mkdirSync, cpSync } from 'fs';
 import { join } from 'path';
 import simpleGit from 'simple-git';
@@ -16,7 +16,10 @@ interface Worktree {
   linearIssueId?: string;
 }
 
-// In-memory worktree registry (persists while server runs)
+function stableId(path: string): string {
+  return createHash('sha256').update(path).digest('hex').slice(0, 16);
+}
+
 const worktreeRegistry: Map<string, Worktree> = new Map();
 
 export function getWorktree(id: string): Worktree | undefined {
@@ -43,8 +46,7 @@ export async function discoverAllWorktrees(): Promise<Worktree[]> {
         const wtPath = lines.find((l) => l.startsWith('worktree '))?.replace('worktree ', '');
         const branch = lines.find((l) => l.startsWith('branch '))?.replace('branch refs/heads/', '');
         if (wtPath && branch && wtPath !== project.path) {
-          const existing = Array.from(worktreeRegistry.values()).find((w) => w.path === wtPath);
-          const id = existing?.id || randomUUID();
+          const id = stableId(wtPath);
           const link = getWorktreeLink(wtPath);
           const wt: Worktree = { id, name: branch, path: wtPath, branch, projectId: project.id, linearIssueId: link?.linearIssueId };
           worktreeRegistry.set(id, wt);
@@ -79,8 +81,7 @@ router.get('/:projectId', async (req: Request, res: Response) => {
       const wtPath = lines.find((l) => l.startsWith('worktree '))?.replace('worktree ', '');
       const branch = lines.find((l) => l.startsWith('branch '))?.replace('branch refs/heads/', '');
       if (wtPath && branch && wtPath !== project.path) {
-        const existing = Array.from(worktreeRegistry.values()).find((w) => w.path === wtPath);
-        const id = existing?.id || randomUUID();
+        const id = stableId(wtPath);
         const link = getWorktreeLink(wtPath);
         const wt: Worktree = { id, name: branch, path: wtPath, branch, projectId, linearIssueId: link?.linearIssueId };
         worktreeRegistry.set(id, wt);
@@ -127,7 +128,7 @@ router.post('/:projectId', async (req: Request, res: Response) => {
       }
     }
 
-    const id = randomUUID();
+    const id = stableId(wtPath);
     const wt: Worktree = { id, name, path: wtPath, branch: name, projectId };
     worktreeRegistry.set(id, wt);
 

@@ -17,6 +17,29 @@ export interface LinearIssue {
   assignee?: string;
   labels: string[];
   url: string;
+  createdBy?: string;
+  project?: string;
+  projectMilestone?: string;
+  team?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  dueDate?: string;
+  attachments?: LinearAttachment[];
+}
+
+export interface LinearAttachment {
+  id: string;
+  title: string;
+  subtitle?: string;
+  url: string;
+}
+
+export interface LinearComment {
+  id: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  author: string;
 }
 
 export interface LinearClientState {
@@ -139,6 +162,19 @@ class LinearMcpClient {
     throw new Error('Failed to fetch issue from Linear MCP');
   }
 
+  async getComments(issueId: string): Promise<LinearComment[]> {
+    const client = this.ensureConnected();
+    try {
+      const result = await client.callTool({
+        name: 'list_comments',
+        arguments: { issueId },
+      });
+      return parseCommentsResult(result);
+    } catch {
+      return [];
+    }
+  }
+
   async searchIssues(query: string): Promise<LinearIssue[]> {
     const client = this.ensureConnected();
     const result = await client.callTool({
@@ -199,6 +235,27 @@ function parseSearchResult(result: unknown): LinearIssue[] {
 }
 
 
+function parseCommentsResult(result: unknown): LinearComment[] {
+  const r = result as { content?: unknown[]; isError?: boolean };
+  if (r.isError) return [];
+  const content = r.content as ContentItem[] | undefined;
+  const textContent = content?.find((c) => c.type === 'text');
+  if (!textContent?.text) return [];
+  try {
+    const raw = JSON.parse(textContent.text) as unknown;
+    const items = Array.isArray(raw) ? raw : [];
+    return items.map((item: Record<string, unknown>) => ({
+      id: String(item.id ?? ''),
+      body: String(item.body ?? ''),
+      createdAt: String(item.createdAt ?? ''),
+      updatedAt: String(item.updatedAt ?? ''),
+      author: String((item.author as Record<string, unknown>)?.name ?? item.author ?? 'Unknown'),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 function normalizeIssue(raw: Record<string, unknown>): LinearIssue {
   // Official Linear MCP returns priority as { value: number, name: string }
   const priorityObj = raw.priority as { value?: number; name?: string } | number | undefined;
@@ -224,6 +281,16 @@ function normalizeIssue(raw: Record<string, unknown>): LinearIssue {
     status = String(stateRaw ?? statusRaw ?? raw.stateName ?? 'Unknown');
   }
 
+  const attachmentsRaw = raw.attachments as Array<Record<string, unknown>> | undefined;
+  const attachments: LinearAttachment[] = Array.isArray(attachmentsRaw)
+    ? attachmentsRaw.map((a) => ({
+        id: String(a.id ?? ''),
+        title: String(a.title ?? ''),
+        subtitle: a.subtitle != null ? String(a.subtitle) : undefined,
+        url: String(a.url ?? ''),
+      }))
+    : [];
+
   return {
     id: String(raw.id ?? ''),
     identifier: String(raw.identifier ?? raw.id ?? ''),
@@ -237,6 +304,16 @@ function normalizeIssue(raw: Record<string, unknown>): LinearIssue {
       : undefined,
     labels: normalizeLabels(raw.labels),
     url: String(raw.url ?? ''),
+    createdBy: raw.createdBy ? String(raw.createdBy) : undefined,
+    project: raw.project ? String(raw.project) : undefined,
+    projectMilestone: (raw.projectMilestone as Record<string, unknown>)?.name
+      ? String((raw.projectMilestone as Record<string, unknown>).name)
+      : undefined,
+    team: raw.team ? String(raw.team) : undefined,
+    createdAt: raw.createdAt ? String(raw.createdAt) : undefined,
+    updatedAt: raw.updatedAt ? String(raw.updatedAt) : undefined,
+    dueDate: raw.dueDate ? String(raw.dueDate) : undefined,
+    attachments: attachments.length > 0 ? attachments : undefined,
   };
 }
 

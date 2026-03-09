@@ -29,7 +29,7 @@ export function App() {
     refresh,
   } = useWorktrees();
 
-  const { status: linearStatus, issue, loadingIssue, issueError, effectiveTicketId, setupLinear } = useLinear(selectedWorktree);
+  const { status: linearStatus, issue, comments, loadingIssue, issueError, effectiveTicketId, setupLinear } = useLinear(selectedWorktree);
 
   const handleUnlink = useCallback(async () => {
     if (!selectedProject || !selectedWorktree) return;
@@ -78,6 +78,7 @@ export function App() {
             <FeaturesTab
               selectedWorktree={selectedWorktree}
               issue={issue}
+              comments={comments}
               loadingIssue={loadingIssue}
               issueError={issueError}
               effectiveTicketId={effectiveTicketId}

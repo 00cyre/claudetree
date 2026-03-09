@@ -1,4 +1,4 @@
-import type { Project, Worktree, DiffResult, FileDiff, LinearIssue, LinearStatus } from '../types/index.js';
+import type { Project, Worktree, DiffResult, FileDiff, LinearIssue, LinearComment, LinearStatus } from '../types/index.js';
 
 const BASE = '/api';
 
@@ -58,6 +58,9 @@ export const api = {
 
   getLinearIssue: (issueId: string) =>
     request<LinearIssue>(`/linear/issues/${issueId}`),
+
+  getLinearComments: (issueId: string) =>
+    request<LinearComment[]>(`/linear/issues/${issueId}/comments`),
 
   linkWorktree: (projectId: string, worktreeId: string, linearIssueId: string) =>
     request<{ ok: boolean }>(`/worktrees/${projectId}/${worktreeId}/link`, {

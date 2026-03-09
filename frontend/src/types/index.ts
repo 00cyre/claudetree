@@ -40,6 +40,29 @@ export interface LinearIssue {
   assignee?: string;
   labels: string[];
   url: string;
+  createdBy?: string;
+  project?: string;
+  projectMilestone?: string;
+  team?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  dueDate?: string;
+  attachments?: LinearAttachment[];
+}
+
+export interface LinearAttachment {
+  id: string;
+  title: string;
+  subtitle?: string;
+  url: string;
+}
+
+export interface LinearComment {
+  id: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  author: string;
 }
 
 export interface LinearStatus {
