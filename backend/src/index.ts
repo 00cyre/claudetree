@@ -1,26 +1,26 @@
-import express from 'express'
-import cors from 'cors'
-import { createServer } from 'http'
-import { WebSocketServer } from 'ws'
-import { worktreeRouter } from './routes/worktrees.js'
-import { gitRouter } from './routes/git.js'
-import { setupTerminal } from './terminal.js'
+import express from 'express';
+import cors from 'cors';
+import { createServer } from 'http';
+import projectsRouter from './routes/projects.js';
+import worktreesRouter from './routes/worktrees.js';
+import diffRouter from './routes/diff.js';
+import commitRouter from './routes/commit.js';
+import { setupTerminalWebSocket } from './terminal/pty.js';
 
-const app = express()
-const server = createServer(app)
-const wss = new WebSocketServer({ server, path: '/terminal' })
+const app = express();
+const PORT = 3001;
 
-app.use(cors())
-app.use(express.json())
+app.use(cors());
+app.use(express.json());
 
-app.use('/api/worktrees', worktreeRouter)
-app.use('/api/git', gitRouter)
+app.use('/api/projects', projectsRouter);
+app.use('/api/worktrees', worktreesRouter);
+app.use('/api/diff', diffRouter);
+app.use('/api/commit', commitRouter);
 
-app.get('/api/health', (_req, res) => res.json({ ok: true }))
+const server = createServer(app);
+setupTerminalWebSocket(server);
 
-setupTerminal(wss)
-
-const PORT = process.env.PORT || 3001
 server.listen(PORT, () => {
-  console.log(`claudetree backend running on http://localhost:${PORT}`)
-})
+  console.log(`claudetree backend running on http://localhost:${PORT}`);
+});

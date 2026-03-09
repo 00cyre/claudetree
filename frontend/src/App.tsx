@@ -1,35 +1,79 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { useState } from 'react';
+import { Sidebar } from './components/Sidebar.js';
+import { FeaturesTab } from './components/FeaturesTab.js';
+import { ReviewTab } from './components/ReviewTab.js';
+import { NewWorktreeModal } from './components/NewWorktreeModal.js';
+import { useWorktrees } from './hooks/useWorktrees.js';
+import type { Tab } from './types/index.js';
+import './App.css';
 
-function App() {
-  const [count, setCount] = useState(0)
+export function App() {
+  const [activeTab, setActiveTab] = useState<Tab>('features');
+  const [showModal, setShowModal] = useState(false);
+
+  const {
+    projects,
+    selectedProject,
+    setSelectedProject,
+    worktrees,
+    selectedWorktree,
+    setSelectedWorktree,
+    loading,
+    addProject,
+    createWorktree,
+    deleteWorktree,
+  } = useWorktrees();
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
-}
+    <div className="app">
+      <header className="header">
+        <h1 className="logo">claudetree</h1>
+        <nav className="tabs">
+          <button
+            className={`tab ${activeTab === 'features' ? 'active' : ''}`}
+            onClick={() => setActiveTab('features')}
+          >
+            Features
+          </button>
+          <button
+            className={`tab ${activeTab === 'review' ? 'active' : ''}`}
+            onClick={() => setActiveTab('review')}
+          >
+            Review
+          </button>
+        </nav>
+      </header>
 
-export default App
+      <div className="main-layout">
+        <Sidebar
+          projects={projects}
+          selectedProject={selectedProject}
+          onSelectProject={setSelectedProject}
+          worktrees={worktrees}
+          selectedWorktree={selectedWorktree}
+          onSelectWorktree={setSelectedWorktree}
+          onNewWorktree={() => setShowModal(true)}
+          onDeleteWorktree={deleteWorktree}
+          loading={loading}
+        />
+
+        <main className="content">
+          {activeTab === 'features' ? (
+            <FeaturesTab selectedWorktree={selectedWorktree} />
+          ) : (
+            <ReviewTab selectedWorktree={selectedWorktree} />
+          )}
+        </main>
+      </div>
+
+      {showModal && (
+        <NewWorktreeModal
+          onClose={() => setShowModal(false)}
+          onCreate={createWorktree}
+          onAddProject={addProject}
+          hasProject={!!selectedProject}
+        />
+      )}
+    </div>
+  );
+}
