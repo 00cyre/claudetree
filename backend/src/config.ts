@@ -19,6 +19,7 @@ export interface WorktreeLink {
 export interface AppConfig {
   projects: Project[];
   linearApiKey?: string;
+  anthropicApiKey?: string;
   worktreeLinks?: Record<string, WorktreeLink>;
 }
 

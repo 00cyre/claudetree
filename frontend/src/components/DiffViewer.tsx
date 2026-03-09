@@ -4,9 +4,10 @@ import { api } from '../api/client.js';
 interface DiffViewerProps {
   worktreeId: string;
   file: string;
+  explanation?: string;
 }
 
-export function DiffViewer({ worktreeId, file }: DiffViewerProps) {
+export function DiffViewer({ worktreeId, file, explanation }: DiffViewerProps) {
   const [diff, setDiff] = useState<string>('');
   const [loading, setLoading] = useState(true);
 
@@ -26,6 +27,9 @@ export function DiffViewer({ worktreeId, file }: DiffViewerProps) {
   return (
     <div className="diff-viewer">
       <div className="diff-header">{file}</div>
+      {explanation && (
+        <div className="diff-explanation">{explanation}</div>
+      )}
       <pre className="diff-content">
         {lines.map((line, i) => {
           let className = 'diff-line';

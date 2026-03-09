@@ -1,4 +1,4 @@
-import type { Project, Worktree, DiffResult, FileDiff, LinearIssue, LinearComment, LinearStatus } from '../types/index.js';
+import type { Project, Worktree, DiffResult, FileDiff, LinearIssue, LinearComment, LinearStatus, AIStatus, FileAnalysis } from '../types/index.js';
 
 const BASE = '/api';
 
@@ -72,4 +72,16 @@ export const api = {
     request<{ ok: boolean }>(`/worktrees/${projectId}/${worktreeId}/link`, {
       method: 'DELETE',
     }),
+
+  getAIStatus: () =>
+    request<AIStatus>('/ai/status'),
+
+  setupAI: (apiKey: string) =>
+    request<{ ok: boolean }>('/ai/setup', {
+      method: 'POST',
+      body: JSON.stringify({ apiKey }),
+    }),
+
+  analyzeChanges: (worktreeId: string) =>
+    request<FileAnalysis>(`/diff/${worktreeId}/analyze`, { method: 'POST' }),
 };

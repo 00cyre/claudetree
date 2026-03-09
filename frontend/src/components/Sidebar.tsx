@@ -1,4 +1,4 @@
-import type { Project, Worktree, LinearStatus } from '../types/index.js';
+import type { Project, Worktree, LinearStatus, AIStatus } from '../types/index.js';
 import { extractTicketIdFromBranch } from '../utils/linear.js';
 
 interface SidebarProps {
@@ -13,6 +13,8 @@ interface SidebarProps {
   loading: boolean;
   linearStatus: LinearStatus;
   onLinearSetup: () => void;
+  aiStatus: AIStatus;
+  onAISetup: () => void;
 }
 
 export function Sidebar({
@@ -27,6 +29,8 @@ export function Sidebar({
   loading,
   linearStatus,
   onLinearSetup,
+  aiStatus,
+  onAISetup,
 }: SidebarProps) {
   return (
     <aside className="sidebar">
@@ -93,6 +97,12 @@ export function Sidebar({
           onClick={onLinearSetup}
         >
           {linearStatus.connected ? 'Linear connected' : 'Connect Linear'}
+        </button>
+        <button
+          className={`btn btn-sm ai-setup-btn ${aiStatus.connected ? 'connected' : ''}`}
+          onClick={onAISetup}
+        >
+          {aiStatus.connected ? 'AI connected' : 'Connect AI'}
         </button>
       </div>
     </aside>

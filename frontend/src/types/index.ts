@@ -74,4 +74,15 @@ export interface LinearStatus {
   error?: string;
 }
 
+export interface AIStatus {
+  configured: boolean;
+  connected: boolean;
+}
+
+export interface FileAnalysis {
+  sortOrder: string[];
+  explanations: Record<string, string>;
+  summary: string;
+}
+
 export type Tab = 'features' | 'review';

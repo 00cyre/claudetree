@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import simpleGit from 'simple-git';
 import { getWorktree } from './worktrees.js';
+import { loadConfig } from '../config.js';
+import { analyzeChanges } from '../ai/analyzer.js';
 
 const router = Router();
 
@@ -44,6 +46,47 @@ router.get('/:worktreeId', async (req: Request, res: Response) => {
     }));
 
     res.json({ branch: wt.branch, files: filesWithStats });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+router.post('/:worktreeId/analyze', async (req: Request, res: Response) => {
+  const wt = getWorktree(req.params.worktreeId);
+  if (!wt) {
+    res.status(404).json({ error: 'Worktree not found' });
+    return;
+  }
+
+  const config = loadConfig();
+  if (!config.anthropicApiKey) {
+    res.status(503).json({ error: 'AI not configured' });
+    return;
+  }
+
+  try {
+    const git = simpleGit(wt.path);
+    const status = await git.status();
+    const changedFiles = [
+      ...status.modified,
+      ...status.not_added,
+      ...status.created,
+      ...status.renamed.map((f) => f.to ?? f.from),
+    ];
+
+    const fileDiffs = await Promise.all(
+      changedFiles.map(async (file) => {
+        try {
+          const diff = await git.diff(['HEAD', '--', file]);
+          return { file, diff };
+        } catch {
+          return { file, diff: '' };
+        }
+      }),
+    );
+
+    const result = await analyzeChanges(config.anthropicApiKey, fileDiffs.filter((f) => f.diff));
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }

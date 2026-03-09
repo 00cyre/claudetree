@@ -6,6 +6,7 @@ import worktreesRouter from './routes/worktrees.js';
 import diffRouter from './routes/diff.js';
 import commitRouter from './routes/commit.js';
 import linearRouter from './routes/linear.js';
+import aiRouter from './routes/ai.js';
 import { setupTerminalWebSocket, preInitializeSessions } from './terminal/pty.js';
 import { discoverAllWorktrees } from './routes/worktrees.js';
 import { linearClient } from './linear/client.js';
@@ -22,6 +23,7 @@ app.use('/api/worktrees', worktreesRouter);
 app.use('/api/diff', diffRouter);
 app.use('/api/commit', commitRouter);
 app.use('/api/linear', linearRouter);
+app.use('/api/ai', aiRouter);
 
 const server = createServer(app);
 

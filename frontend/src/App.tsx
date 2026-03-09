@@ -1,19 +1,22 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar.js';
 import { FeaturesTab } from './components/FeaturesTab.js';
 import { ReviewTab } from './components/ReviewTab.js';
 import { NewWorktreeModal } from './components/NewWorktreeModal.js';
 import { LinearSetupModal } from './components/LinearSetupModal.js';
+import { AnthropicSetupModal } from './components/AnthropicSetupModal.js';
 import { useWorktrees } from './hooks/useWorktrees.js';
 import { useLinear } from './hooks/useLinear.js';
 import { api } from './api/client.js';
-import type { Tab } from './types/index.js';
+import type { Tab, AIStatus } from './types/index.js';
 import './App.css';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<Tab>('features');
   const [showModal, setShowModal] = useState(false);
   const [showLinearSetup, setShowLinearSetup] = useState(false);
+  const [showAISetup, setShowAISetup] = useState(false);
+  const [aiStatus, setAIStatus] = useState<AIStatus>({ configured: false, connected: false });
 
   const {
     projects,
@@ -30,6 +33,20 @@ export function App() {
   } = useWorktrees();
 
   const { status: linearStatus, issue, comments, loadingIssue, issueError, effectiveTicketId, setupLinear } = useLinear(selectedWorktree);
+
+  const refreshAIStatus = useCallback(async () => {
+    try {
+      const s = await api.getAIStatus();
+      setAIStatus(s);
+    } catch { /* backend may not be running */ }
+  }, []);
+
+  useEffect(() => { refreshAIStatus(); }, [refreshAIStatus]);
+
+  const handleAISetup = useCallback(async (apiKey: string) => {
+    await api.setupAI(apiKey);
+    await refreshAIStatus();
+  }, [refreshAIStatus]);
 
   const handleUnlink = useCallback(async () => {
     if (!selectedProject || !selectedWorktree) return;
@@ -71,6 +88,8 @@ export function App() {
           loading={loading}
           linearStatus={linearStatus}
           onLinearSetup={() => setShowLinearSetup(true)}
+          aiStatus={aiStatus}
+          onAISetup={() => setShowAISetup(true)}
         />
 
         <main className="content">
@@ -85,7 +104,7 @@ export function App() {
               onUnlink={handleUnlink}
             />
           ) : (
-            <ReviewTab selectedWorktree={selectedWorktree} />
+            <ReviewTab selectedWorktree={selectedWorktree} aiConnected={aiStatus.connected} />
           )}
         </main>
       </div>
@@ -104,6 +123,13 @@ export function App() {
         <LinearSetupModal
           onClose={() => setShowLinearSetup(false)}
           onSetup={setupLinear}
+        />
+      )}
+
+      {showAISetup && (
+        <AnthropicSetupModal
+          onClose={() => setShowAISetup(false)}
+          onSetup={handleAISetup}
         />
       )}
     </div>
