@@ -1,4 +1,14 @@
 import { useState } from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 interface LinearSetupModalProps {
   onClose: () => void;
@@ -25,36 +35,42 @@ export function LinearSetupModal({ onClose, onSetup }: LinearSetupModalProps) {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Connect Linear</h3>
-        <div className="modal-section">
-          <label>Personal API Key</label>
-          <input
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="lin_api_..."
-            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-          />
-          <p className="modal-hint">
-            Generate at Linear → Settings → Account → API
-          </p>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[420px]">
+        <DialogHeader>
+          <DialogTitle>Connect Linear</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label>Personal API Key</Label>
+            <Input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="lin_api_..."
+              onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+            />
+            <p className="text-xs text-muted-foreground">
+              Generate at Linear → Settings → Account → API
+            </p>
+          </div>
+
+          {error && (
+            <p className="text-sm text-destructive">{error}</p>
+          )}
         </div>
 
-        {error && <div className="modal-error">{error}</div>}
-
-        <div className="modal-actions">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button
-            className="btn btn-primary"
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
             onClick={handleSubmit}
             disabled={loading || !apiKey.trim()}
           >
             {loading ? 'Connecting...' : 'Connect'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

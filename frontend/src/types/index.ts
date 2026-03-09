@@ -85,4 +85,16 @@ export interface FileAnalysis {
   summary: string;
 }
 
+export interface HunkExplanation {
+  hunkIndex: number;
+  title: string;
+  description: string;
+}
+
+export interface FileDetailedAnalysis {
+  file: string;
+  overview: string;
+  steps: HunkExplanation[];
+}
+
 export type Tab = 'features' | 'review';

@@ -1,4 +1,14 @@
 import { useState } from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 interface NewWorktreeModalProps {
   onClose: () => void;
@@ -10,10 +20,8 @@ interface NewWorktreeModalProps {
 
 function extractIssueId(input: string): string {
   const trimmed = input.trim();
-  // Extract from Linear URL: https://linear.app/team/issue/PROJ-123/slug
   const urlMatch = trimmed.match(/\/issue\/([\w]+-\d+)/);
   if (urlMatch) return urlMatch[1];
-  // Already an identifier like PROJ-123
   if (/^[\w]+-\d+$/.test(trimmed)) return trimmed;
   return trimmed;
 }
@@ -54,61 +62,66 @@ export function NewWorktreeModal({ onClose, onCreate, onAddProject, hasProject, 
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>New Worktree</h3>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[420px]" onClick={(e) => e.stopPropagation()}>
+        <DialogHeader>
+          <DialogTitle>New Worktree</DialogTitle>
+        </DialogHeader>
 
-        {!hasProject && (
-          <div className="modal-section">
-            <label>Project path (git repository)</label>
-            <div className="modal-row">
-              <input
-                type="text"
-                value={projectPath}
-                onChange={(e) => setProjectPath(e.target.value)}
-                placeholder="/path/to/repo"
-              />
-              <button className="btn" onClick={handleAddProject} disabled={loading}>Add</button>
+        <div className="space-y-4 py-4">
+          {!hasProject && (
+            <div className="space-y-2">
+              <Label>Project path (git repository)</Label>
+              <div className="flex gap-2">
+                <Input
+                  value={projectPath}
+                  onChange={(e) => setProjectPath(e.target.value)}
+                  placeholder="/path/to/repo"
+                  className="flex-1"
+                />
+                <Button onClick={handleAddProject} disabled={loading} variant="secondary">
+                  Add
+                </Button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        <div className="modal-section">
-          <label>Feature name</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="my-feature"
-            onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-          />
-        </div>
-
-        {linearConnected && (
-          <div className="modal-section">
-            <label>Linear issue (optional)</label>
-            <input
-              type="text"
-              value={linearIssueId}
-              onChange={(e) => setLinearIssueId(e.target.value)}
-              placeholder="PROJ-123 or paste Linear URL"
+          <div className="space-y-2">
+            <Label>Feature name</Label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="my-feature"
+              onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
             />
           </div>
-        )}
 
-        {error && <div className="modal-error">{error}</div>}
+          {linearConnected && (
+            <div className="space-y-2">
+              <Label>Linear issue (optional)</Label>
+              <Input
+                value={linearIssueId}
+                onChange={(e) => setLinearIssueId(e.target.value)}
+                placeholder="PROJ-123 or paste Linear URL"
+              />
+            </div>
+          )}
 
-        <div className="modal-actions">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button
-            className="btn btn-primary"
+          {error && (
+            <p className="text-sm text-destructive">{error}</p>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
             onClick={handleCreate}
             disabled={loading || !name.trim() || !hasProject}
           >
             {loading ? 'Creating...' : 'Create'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

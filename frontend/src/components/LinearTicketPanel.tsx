@@ -1,5 +1,9 @@
 import Markdown from 'react-markdown';
-import type { LinearIssue, LinearComment } from '../types/index.js';
+import type { LinearIssue, LinearComment } from '@/types';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { cn } from '@/lib/utils';
 
 interface LinearTicketPanelProps {
   issue: LinearIssue;
@@ -46,142 +50,141 @@ function ExternalLinkIcon() {
 
 export function LinearTicketPanel({ issue, comments, onUnlink }: LinearTicketPanelProps) {
   return (
-    <div className="linear-ticket-panel">
-      {/* Header bar */}
-      <div className="ticket-top-bar">
-        <div className="ticket-top-left">
+    <div className="flex flex-col h-full bg-card">
+      <div className="flex items-center justify-between gap-2 p-3 border-b border-border shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
           <a
-            className="ticket-identifier"
+            className="text-sm font-medium text-primary hover:underline inline-flex items-center gap-1"
             href={issue.url}
             target="_blank"
             rel="noopener noreferrer"
           >
             {issue.identifier} <ExternalLinkIcon />
           </a>
-          {issue.team && <span className="ticket-team-badge">{issue.team}</span>}
+          {issue.team && (
+            <Badge variant="secondary" className="text-xs">{issue.team}</Badge>
+          )}
         </div>
         {onUnlink && (
-          <button className="btn-delete" onClick={onUnlink} title="Unlink issue">
-            &times;
-          </button>
+          <Button size="icon-xs" variant="ghost" className="text-muted-foreground hover:text-destructive"
+            onClick={onUnlink} title="Unlink issue">
+            ×
+          </Button>
         )}
       </div>
 
-      <div className="ticket-scrollable">
-        {/* Title */}
-        <h3 className="ticket-title">{issue.title}</h3>
+      <ScrollArea className="flex-1">
+        <div className="p-3 space-y-4">
+          <h3 className="text-base font-semibold text-foreground">{issue.title}</h3>
 
-        {/* Status row */}
-        <div className="ticket-meta">
-          <span className="ticket-status-badge">{issue.status}</span>
-          <span
-            className="ticket-priority-badge"
-            style={{ borderColor: PRIORITY_COLORS[issue.priority] ?? '#8b949e' }}
-          >
-            {issue.priorityLabel}
-          </span>
-          {issue.labels.map((label) => (
-            <span key={label} className="ticket-label-chip">{label}</span>
-          ))}
-        </div>
-
-        {/* Properties grid */}
-        <div className="ticket-props">
-          {issue.assignee && (
-            <div className="ticket-prop">
-              <span className="ticket-prop-label">Assignee</span>
-              <span className="ticket-prop-value">{issue.assignee}</span>
-            </div>
-          )}
-          {issue.project && (
-            <div className="ticket-prop">
-              <span className="ticket-prop-label">Project</span>
-              <span className="ticket-prop-value">{issue.project}</span>
-            </div>
-          )}
-          {issue.projectMilestone && (
-            <div className="ticket-prop">
-              <span className="ticket-prop-label">Milestone</span>
-              <span className="ticket-prop-value">{issue.projectMilestone}</span>
-            </div>
-          )}
-          {issue.createdBy && (
-            <div className="ticket-prop">
-              <span className="ticket-prop-label">Created by</span>
-              <span className="ticket-prop-value">{issue.createdBy}</span>
-            </div>
-          )}
-          {issue.dueDate && (
-            <div className="ticket-prop">
-              <span className="ticket-prop-label">Due</span>
-              <span className="ticket-prop-value">{new Date(issue.dueDate).toLocaleDateString()}</span>
-            </div>
-          )}
-          {issue.createdAt && (
-            <div className="ticket-prop">
-              <span className="ticket-prop-label">Created</span>
-              <span className="ticket-prop-value">{timeAgo(issue.createdAt)}</span>
-            </div>
-          )}
-          {issue.updatedAt && (
-            <div className="ticket-prop">
-              <span className="ticket-prop-label">Updated</span>
-              <span className="ticket-prop-value">{timeAgo(issue.updatedAt)}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Attachments (PRs, links) */}
-        {issue.attachments && issue.attachments.length > 0 && (
-          <div className="ticket-section">
-            <div className="ticket-section-label">Resources</div>
-            <div className="ticket-attachments">
-              {issue.attachments.map((att) => (
-                <a
-                  key={att.id}
-                  className="ticket-attachment"
-                  href={att.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <GitBranchIcon />
-                  <span className="ticket-attachment-title">{att.title}</span>
-                </a>
-              ))}
-            </div>
+          <div className="flex flex-wrap gap-1.5">
+            <Badge variant="secondary">{issue.status}</Badge>
+            <Badge
+              variant="outline"
+              className="text-xs"
+              style={{ borderColor: PRIORITY_COLORS[issue.priority] ?? '#8b949e' }}
+            >
+              {issue.priorityLabel}
+            </Badge>
+            {issue.labels.map((label) => (
+              <Badge key={label} variant="outline" className="text-xs">{label}</Badge>
+            ))}
           </div>
-        )}
 
-        {/* Description — rendered as markdown */}
-        {issue.description && (
-          <div className="ticket-section">
-            <div className="ticket-section-label">Description</div>
-            <div className="ticket-markdown">
-              <Markdown>{issue.description}</Markdown>
-            </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+            {issue.assignee && (
+              <>
+                <span className="text-muted-foreground">Assignee</span>
+                <span>{issue.assignee}</span>
+              </>
+            )}
+            {issue.project && (
+              <>
+                <span className="text-muted-foreground">Project</span>
+                <span>{issue.project}</span>
+              </>
+            )}
+            {issue.projectMilestone && (
+              <>
+                <span className="text-muted-foreground">Milestone</span>
+                <span>{issue.projectMilestone}</span>
+              </>
+            )}
+            {issue.createdBy && (
+              <>
+                <span className="text-muted-foreground">Created by</span>
+                <span>{issue.createdBy}</span>
+              </>
+            )}
+            {issue.dueDate && (
+              <>
+                <span className="text-muted-foreground">Due</span>
+                <span>{new Date(issue.dueDate).toLocaleDateString()}</span>
+              </>
+            )}
+            {issue.createdAt && (
+              <>
+                <span className="text-muted-foreground">Created</span>
+                <span>{timeAgo(issue.createdAt)}</span>
+              </>
+            )}
+            {issue.updatedAt && (
+              <>
+                <span className="text-muted-foreground">Updated</span>
+                <span>{timeAgo(issue.updatedAt)}</span>
+              </>
+            )}
           </div>
-        )}
 
-        {/* Comments / Activity */}
-        {comments.length > 0 && (
-          <div className="ticket-section">
-            <div className="ticket-section-label">Activity</div>
-            <div className="ticket-comments">
-              {comments.map((comment) => (
-                <div key={comment.id} className="ticket-comment">
-                  <div className="ticket-comment-header">
-                    <span className="ticket-comment-author">{comment.author}</span>
-                    <span className="ticket-comment-time">{timeAgo(comment.createdAt)}</span>
+          {issue.attachments && issue.attachments.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-xs font-semibold text-muted-foreground uppercase">Resources</div>
+              <div className="flex flex-col gap-1">
+                {issue.attachments.map((att) => (
+                  <a
+                    key={att.id}
+                    className="flex items-center gap-2 text-sm text-primary hover:underline"
+                    href={att.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <GitBranchIcon />
+                    <span>{att.title}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {issue.description && (
+            <div className="space-y-2">
+              <div className="text-xs font-semibold text-muted-foreground uppercase">Description</div>
+              <div className="text-sm [&_p]:mb-2 [&_ul]:list-disc [&_ul]:ml-4 [&_a]:text-primary [&_a]:underline">
+                <Markdown>{issue.description}</Markdown>
+              </div>
+            </div>
+          )}
+
+          {comments.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-xs font-semibold text-muted-foreground uppercase">Activity</div>
+              <div className="space-y-3">
+                {comments.map((comment) => (
+                  <div key={comment.id} className="rounded-md border border-border p-3 space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="font-medium">{comment.author}</span>
+                      <span className="text-muted-foreground">{timeAgo(comment.createdAt)}</span>
+                    </div>
+                    <div className="text-sm [&_p]:mb-2 [&_ul]:list-disc [&_ul]:ml-4 [&_a]:text-primary [&_a]:underline">
+                      <Markdown>{comment.body}</Markdown>
+                    </div>
                   </div>
-                  <div className="ticket-markdown ticket-comment-body">
-                    <Markdown>{comment.body}</Markdown>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      </ScrollArea>
     </div>
   );
 }

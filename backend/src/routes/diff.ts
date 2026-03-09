@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import simpleGit from 'simple-git';
 import { getWorktree } from './worktrees.js';
 import { loadConfig } from '../config.js';
-import { analyzeChanges } from '../ai/analyzer.js';
+import { analyzeChanges, analyzeFileDetailed } from '../ai/analyzer.js';
 
 const router = Router();
 
@@ -86,6 +86,30 @@ router.post('/:worktreeId/analyze', async (req: Request, res: Response) => {
     );
 
     const result = await analyzeChanges(config.anthropicApiKey, fileDiffs.filter((f) => f.diff));
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+router.post('/:worktreeId/:file/analyze', async (req: Request, res: Response) => {
+  const wt = getWorktree(req.params.worktreeId);
+  if (!wt) {
+    res.status(404).json({ error: 'Worktree not found' });
+    return;
+  }
+
+  const config = loadConfig();
+  if (!config.anthropicApiKey) {
+    res.status(503).json({ error: 'AI not configured' });
+    return;
+  }
+
+  const file = decodeURIComponent(req.params.file);
+  try {
+    const git = simpleGit(wt.path);
+    const diff = await git.diff(['HEAD', '--', file]);
+    const result = await analyzeFileDetailed(config.anthropicApiKey, file, diff);
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: String(err) });

@@ -1,46 +1,183 @@
-import { useState, useEffect } from 'react';
-import { api } from '../api/client.js';
+import { useState, useEffect, useMemo } from "react";
+import { api } from "@/api/client";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { ChainOfThought } from "@/components/ChainOfThought";
+import { CodeDiff } from "@/components/tool-ui/code-diff";
+import { parseDiffHunks, hunkToPatch, describeHunk } from "@/utils/diffParser";
+import { languageFromFilename } from "@/utils/language";
+import type { FileDetailedAnalysis, HunkExplanation } from "@/types";
+import type { StepStatus } from "@/components/ChainOfThought";
+import { Loader2 } from "lucide-react";
 
 interface DiffViewerProps {
   worktreeId: string;
   file: string;
   explanation?: string;
+  aiConnected?: boolean;
 }
 
-export function DiffViewer({ worktreeId, file, explanation }: DiffViewerProps) {
-  const [diff, setDiff] = useState<string>('');
+export function DiffViewer({
+  worktreeId,
+  file,
+  explanation,
+  aiConnected,
+}: DiffViewerProps) {
+  const [diff, setDiff] = useState<string>("");
   const [loading, setLoading] = useState(true);
+  const [fileAnalysis, setFileAnalysis] = useState<FileDetailedAnalysis | null>(
+    null,
+  );
+  const [analyzing, setAnalyzing] = useState(false);
 
   useEffect(() => {
     setLoading(true);
-    api.getFileDiff(worktreeId, file)
+    setFileAnalysis(null);
+    api
+      .getFileDiff(worktreeId, file)
       .then((data) => setDiff(data.diff))
       .catch((err) => setDiff(`Error loading diff: ${err}`))
       .finally(() => setLoading(false));
   }, [worktreeId, file]);
 
-  if (loading) return <div className="diff-loading">Loading diff...</div>;
-  if (!diff) return <div className="diff-empty">No changes</div>;
+  useEffect(() => {
+    if (!aiConnected || !diff || loading) return;
 
-  const lines = diff.split('\n');
+    let cancelled = false;
+    setAnalyzing(true);
+
+    api
+      .analyzeFile(worktreeId, file)
+      .then((result) => {
+        if (!cancelled) setFileAnalysis(result);
+      })
+      .catch((err) => {
+        console.error("File analysis failed:", err);
+      })
+      .finally(() => {
+        if (!cancelled) setAnalyzing(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [worktreeId, file, aiConnected, diff, loading]);
+
+  const hunks = useMemo(() => parseDiffHunks(diff), [diff]);
+  const language = useMemo(() => languageFromFilename(file), [file]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+        Loading diff...
+      </div>
+    );
+  }
+  if (!diff) {
+    return (
+      <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+        No changes
+      </div>
+    );
+  }
+
+  const stepsMap = new Map<number, HunkExplanation>();
+  if (fileAnalysis) {
+    for (const step of fileAnalysis.steps) {
+      stepsMap.set(step.hunkIndex, step);
+    }
+  }
 
   return (
-    <div className="diff-viewer">
-      <div className="diff-header">{file}</div>
-      {explanation && (
-        <div className="diff-explanation">{explanation}</div>
-      )}
-      <pre className="diff-content">
-        {lines.map((line, i) => {
-          let className = 'diff-line';
-          if (line.startsWith('+') && !line.startsWith('+++')) className += ' diff-add';
-          else if (line.startsWith('-') && !line.startsWith('---')) className += ' diff-remove';
-          else if (line.startsWith('@@')) className += ' diff-hunk';
-          return (
-            <div key={i} className={className}>{line}</div>
-          );
-        })}
-      </pre>
+    <div className="flex flex-col h-full">
+      <div className="px-4 py-2 border-b border-border font-mono text-sm text-muted-foreground shrink-0 flex items-center gap-2">
+        <span className="truncate">{file}</span>
+      </div>
+
+      <ScrollArea className="flex-1">
+        <div className="p-4 space-y-4">
+          {/* Chain of thought analysis */}
+          <ChainOfThought defaultOpen={true}>
+            <ChainOfThought.Header>
+              {analyzing ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Analyzing changes...
+                </span>
+              ) : fileAnalysis ? (
+                "Code Analysis"
+              ) : explanation ? (
+                "Overview"
+              ) : (
+                "Changes"
+              )}
+            </ChainOfThought.Header>
+            <ChainOfThought.Content>
+              {/* Overall explanation */}
+              {(fileAnalysis?.overview || explanation) && (
+                <p className="text-sm text-muted-foreground mb-3 pl-8">
+                  {fileAnalysis?.overview ?? explanation}
+                </p>
+              )}
+
+              {/* Per-hunk steps */}
+              {hunks.map((hunk, i) => {
+                const step = stepsMap.get(i);
+                const label = step?.title ?? describeHunk(hunk);
+                const description = step?.description;
+                const status: StepStatus = fileAnalysis
+                  ? "complete"
+                  : analyzing
+                    ? i === 0
+                      ? "active"
+                      : "pending"
+                    : "complete";
+
+                return (
+                  <ChainOfThought.Step
+                    key={i}
+                    label={label}
+                    description={description}
+                    status={status}
+                    defaultOpen={hunks.length <= 3}
+                  >
+                    <div className="mt-2">
+                      <CodeDiff
+                        id={`${file}-hunk-${i}`}
+                        patch={hunkToPatch(hunk)}
+                        language={language}
+                        filename={file}
+                        lineNumbers="visible"
+                        diffStyle="unified"
+                        maxCollapsedLines={40}
+                      />
+                    </div>
+                  </ChainOfThought.Step>
+                );
+              })}
+
+              {hunks.length === 0 && (
+                <p className="text-sm text-muted-foreground pl-8">
+                  No parseable hunks in this diff.
+                </p>
+              )}
+            </ChainOfThought.Content>
+          </ChainOfThought>
+
+          {/* Full diff fallback (collapsed by default) */}
+          {hunks.length > 1 && (
+            <CodeDiff
+              id={`${file}-full`}
+              patch={diff}
+              language={language}
+              filename={`${file} (full diff)`}
+              lineNumbers="visible"
+              diffStyle="unified"
+              maxCollapsedLines={20}
+              defaultExpanded={false}
+            />
+          )}
+        </div>
+      </ScrollArea>
     </div>
   );
 }

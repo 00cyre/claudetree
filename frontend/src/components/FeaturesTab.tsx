@@ -1,6 +1,9 @@
-import { TerminalView } from './Terminal.js';
-import { LinearTicketPanel } from './LinearTicketPanel.js';
-import type { Worktree, LinearIssue, LinearComment } from '../types/index.js';
+import { TerminalView } from '@/components/Terminal';
+import { LinearTicketPanel } from '@/components/LinearTicketPanel';
+import type { Worktree, LinearIssue, LinearComment } from '@/types';
+import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { cn } from '@/lib/utils';
 
 interface FeaturesTabProps {
   selectedWorktree: Worktree | null;
@@ -14,29 +17,33 @@ interface FeaturesTabProps {
 
 export function FeaturesTab({ selectedWorktree, issue, comments, loadingIssue, issueError, effectiveTicketId, onUnlink }: FeaturesTabProps) {
   return (
-    <div className="features-tab">
-      <div className="features-body features-body-split">
-        <div className="features-terminal-section">
+    <div className="flex flex-col h-full">
+      <div className="flex flex-1 min-h-0">
+        <div className="flex-1 flex flex-col min-w-0">
           <TerminalView worktreeId={selectedWorktree?.id ?? null} />
         </div>
         {effectiveTicketId && (
-          <div className="features-ticket-section">
+          <div className="w-80 min-w-80 flex flex-col border-l border-border overflow-hidden">
             {loadingIssue && (
-              <div className="linear-ticket-panel linear-ticket-loading">Loading issue...</div>
+              <div className="flex items-center justify-center p-6 text-sm text-muted-foreground">
+                Loading issue...
+              </div>
             )}
             {!loadingIssue && issue && (
-              <LinearTicketPanel
-                issue={issue}
-                comments={comments}
-                onUnlink={selectedWorktree?.linearIssueId ? onUnlink : undefined}
-              />
+              <ScrollArea className="flex-1">
+                <LinearTicketPanel
+                  issue={issue}
+                  comments={comments}
+                  onUnlink={selectedWorktree?.linearIssueId ? onUnlink : undefined}
+                />
+              </ScrollArea>
             )}
             {!loadingIssue && issueError && (
-              <div className="linear-ticket-panel linear-ticket-error">
-                <div className="ticket-error-title">Could not load issue</div>
-                <div className="ticket-error-message">{issueError}</div>
+              <div className="p-4 space-y-2">
+                <div className="text-sm font-medium">Could not load issue</div>
+                <div className="text-sm text-muted-foreground">{issueError}</div>
                 <a
-                  className="ticket-error-link"
+                  className="text-sm text-primary hover:underline block"
                   href={`https://linear.app/search?q=${encodeURIComponent(effectiveTicketId)}`}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -44,9 +51,9 @@ export function FeaturesTab({ selectedWorktree, issue, comments, loadingIssue, i
                   Open {effectiveTicketId} in Linear
                 </a>
                 {selectedWorktree?.linearIssueId && (
-                  <button className="btn btn-sm" onClick={onUnlink} style={{ marginTop: 8 }}>
+                  <Button size="sm" variant="outline" onClick={onUnlink} className="mt-2">
                     Unlink
-                  </button>
+                  </Button>
                 )}
               </div>
             )}

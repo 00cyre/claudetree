@@ -1,15 +1,15 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Sidebar } from './components/Sidebar.js';
-import { FeaturesTab } from './components/FeaturesTab.js';
-import { ReviewTab } from './components/ReviewTab.js';
-import { NewWorktreeModal } from './components/NewWorktreeModal.js';
-import { LinearSetupModal } from './components/LinearSetupModal.js';
-import { AnthropicSetupModal } from './components/AnthropicSetupModal.js';
-import { useWorktrees } from './hooks/useWorktrees.js';
-import { useLinear } from './hooks/useLinear.js';
-import { api } from './api/client.js';
-import type { Tab, AIStatus } from './types/index.js';
-import './App.css';
+import { Sidebar } from '@/components/Sidebar';
+import { FeaturesTab } from '@/components/FeaturesTab';
+import { ReviewTab } from '@/components/ReviewTab';
+import { NewWorktreeModal } from '@/components/NewWorktreeModal';
+import { LinearSetupModal } from '@/components/LinearSetupModal';
+import { AnthropicSetupModal } from '@/components/AnthropicSetupModal';
+import { useWorktrees } from '@/hooks/useWorktrees';
+import { useLinear } from '@/hooks/useLinear';
+import { api } from '@/api/client';
+import type { Tab, AIStatus } from '@/types';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<Tab>('features');
@@ -56,26 +56,18 @@ export function App() {
   }, [selectedProject, selectedWorktree, refresh, setSelectedWorktree]);
 
   return (
-    <div className="app">
-      <header className="header">
-        <h1 className="logo">claudetree</h1>
-        <nav className="tabs">
-          <button
-            className={`tab ${activeTab === 'features' ? 'active' : ''}`}
-            onClick={() => setActiveTab('features')}
-          >
-            Features
-          </button>
-          <button
-            className={`tab ${activeTab === 'review' ? 'active' : ''}`}
-            onClick={() => setActiveTab('review')}
-          >
-            Review
-          </button>
-        </nav>
+    <div className="flex flex-col h-screen overflow-hidden bg-background text-foreground">
+      <header className="flex items-center gap-6 px-4 h-12 border-b border-border bg-card shrink-0">
+        <h1 className="text-base font-semibold text-primary">claudetree</h1>
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)} className="flex-1">
+          <TabsList variant="line" className="bg-transparent p-0 h-auto gap-1">
+            <TabsTrigger value="features">Features</TabsTrigger>
+            <TabsTrigger value="review">Review</TabsTrigger>
+          </TabsList>
+        </Tabs>
       </header>
 
-      <div className="main-layout">
+      <div className="flex flex-1 overflow-hidden">
         <Sidebar
           projects={projects}
           selectedProject={selectedProject}
@@ -92,7 +84,7 @@ export function App() {
           onAISetup={() => setShowAISetup(true)}
         />
 
-        <main className="content">
+        <main className="flex-1 overflow-hidden flex flex-col min-w-0">
           {activeTab === 'features' ? (
             <FeaturesTab
               selectedWorktree={selectedWorktree}

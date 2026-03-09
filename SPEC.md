@@ -15,8 +15,9 @@ claudetree/
 
 ### Frontend
 - **Vite + React + TypeScript**
+- **shadcn/ui + Tailwind CSS** for modern, accessible components
 - Two top-level tabs: **Features** | **Review**
-- No external UI library needed — keep it minimal, dark theme
+- Dark theme
 
 ### Backend
 - **Express + TypeScript**
@@ -138,7 +139,7 @@ Frontend runs on `localhost:5173`, backend on `localhost:3001`.
 | Layer | Tech |
 |-------|------|
 | Frontend | Vite, React, TypeScript |
-| Styling | Plain CSS or CSS modules (no heavy UI lib) |
+| Styling | Tailwind CSS + shadcn/ui |
 | Terminal | xterm.js + xterm-addon-fit |
 | Backend | Express, TypeScript, tsx |
 | Git ops | simple-git |

@@ -1,4 +1,14 @@
 import { useState } from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 interface AnthropicSetupModalProps {
   onClose: () => void;
@@ -26,36 +36,42 @@ export function AnthropicSetupModal({ onClose, onSetup }: AnthropicSetupModalPro
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Connect Claude AI</h3>
-        <div className="modal-section">
-          <label>Anthropic API Key</label>
-          <input
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="sk-ant-api03-... or sk-ant-oat01-..."
-            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
-          />
-          <p className="modal-hint">
-            API key (sk-ant-api03-...) or Claude Code OAuth token (sk-ant-oat01-...)
-          </p>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[420px]">
+        <DialogHeader>
+          <DialogTitle>Connect Claude AI</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label>Anthropic API Key</Label>
+            <Input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="sk-ant-api03-... or sk-ant-oat01-..."
+              onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+            />
+            <p className="text-xs text-muted-foreground">
+              API key (sk-ant-api03-...) or Claude Code OAuth token (sk-ant-oat01-...)
+            </p>
+          </div>
+
+          {error && (
+            <p className="text-sm text-destructive">{error}</p>
+          )}
         </div>
 
-        {error && <div className="modal-error">{error}</div>}
-
-        <div className="modal-actions">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button
-            className="btn btn-primary"
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
             onClick={handleSubmit}
             disabled={loading || !apiKey.trim()}
           >
             {loading ? 'Connecting...' : 'Connect'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

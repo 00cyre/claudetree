@@ -1,4 +1,4 @@
-import type { Project, Worktree, DiffResult, FileDiff, LinearIssue, LinearComment, LinearStatus, AIStatus, FileAnalysis } from '../types/index.js';
+import type { Project, Worktree, DiffResult, FileDiff, LinearIssue, LinearComment, LinearStatus, AIStatus, FileAnalysis, FileDetailedAnalysis } from '../types/index.js';
 
 const BASE = '/api';
 
@@ -84,4 +84,7 @@ export const api = {
 
   analyzeChanges: (worktreeId: string) =>
     request<FileAnalysis>(`/diff/${worktreeId}/analyze`, { method: 'POST' }),
+
+  analyzeFile: (worktreeId: string, file: string) =>
+    request<FileDetailedAnalysis>(`/diff/${worktreeId}/${encodeURIComponent(file)}/analyze`, { method: 'POST' }),
 };

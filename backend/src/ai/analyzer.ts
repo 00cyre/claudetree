@@ -95,6 +95,91 @@ export async function analyzeChanges(
   };
 }
 
+export interface HunkExplanation {
+  hunkIndex: number;
+  title: string;
+  description: string;
+}
+
+export interface FileDetailedAnalysis {
+  file: string;
+  overview: string;
+  steps: HunkExplanation[];
+}
+
+const FILE_ANALYSIS_PROMPT = `You analyze a single file's code changes in detail. Given a file's unified diff, you must:
+
+1. Write a brief overview (1-2 sentences) of what changed in this file overall.
+
+2. For each hunk (section between @@ markers), write:
+   - A short title (3-8 words) describing the change
+   - A detailed explanation (1-3 sentences) of what the change does and why
+
+Return ONLY valid JSON with this exact structure:
+{
+  "overview": "Overall summary of changes in this file",
+  "steps": [
+    {
+      "hunkIndex": 0,
+      "title": "Short title for hunk 0",
+      "description": "Detailed explanation of what changed and why"
+    },
+    {
+      "hunkIndex": 1,
+      "title": "Short title for hunk 1",
+      "description": "Detailed explanation of what changed and why"
+    }
+  ]
+}
+
+The hunkIndex must match the zero-based index of hunks in the diff (each @@ header starts a new hunk).`;
+
+export async function analyzeFileDetailed(
+  apiKey: string,
+  file: string,
+  diff: string,
+): Promise<FileDetailedAnalysis> {
+  if (!diff.trim()) {
+    return { file, overview: 'No changes.', steps: [] };
+  }
+
+  const client = createClient(apiKey);
+
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 2048,
+    system: FILE_ANALYSIS_PROMPT,
+    messages: [
+      {
+        role: 'user',
+        content: `Analyze this diff for \`${file}\`:\n\n\`\`\`diff\n${diff.slice(0, 8000)}\n\`\`\``,
+      },
+    ],
+  });
+
+  const text = response.content
+    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+    .map((b) => b.text)
+    .join('');
+
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error('AI returned no valid JSON');
+  }
+
+  const parsed = JSON.parse(jsonMatch[0]) as { overview?: string; steps?: HunkExplanation[] };
+
+  return {
+    file,
+    overview: parsed.overview ?? '',
+    steps: (parsed.steps ?? []).map((s, i) => ({
+      hunkIndex: s.hunkIndex ?? i,
+      title: s.title ?? `Change ${i + 1}`,
+      description: s.description ?? '',
+    })),
+  };
+}
+
 export async function validateApiKey(key: string): Promise<void> {
   const client = createClient(key);
   try {
