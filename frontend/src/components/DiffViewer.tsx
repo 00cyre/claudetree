@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { api } from "@/api/client";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ChainOfThought } from "@/components/ChainOfThought";
@@ -30,10 +30,12 @@ export function DiffViewer({
     null,
   );
   const [analyzing, setAnalyzing] = useState(false);
+  const lastAnalyzedKey = useRef<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
     setFileAnalysis(null);
+    lastAnalyzedKey.current = null;
     api
       .getFileDiff(worktreeId, file)
       .then((data) => setDiff(data.diff))
@@ -43,6 +45,10 @@ export function DiffViewer({
 
   useEffect(() => {
     if (!aiConnected || !diff || loading) return;
+
+    const key = `${worktreeId}:${file}`;
+    if (lastAnalyzedKey.current === key) return;
+    lastAnalyzedKey.current = key;
 
     let cancelled = false;
     setAnalyzing(true);
@@ -54,6 +60,7 @@ export function DiffViewer({
       })
       .catch((err) => {
         console.error("File analysis failed:", err);
+        if (!cancelled) lastAnalyzedKey.current = null;
       })
       .finally(() => {
         if (!cancelled) setAnalyzing(false);
@@ -62,6 +69,7 @@ export function DiffViewer({
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [worktreeId, file, aiConnected, diff, loading]);
 
   const hunks = useMemo(() => parseDiffHunks(diff), [diff]);

@@ -7,6 +7,7 @@ import { LinearSetupModal } from '@/components/LinearSetupModal';
 import { AnthropicSetupModal } from '@/components/AnthropicSetupModal';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useWorktrees } from '@/hooks/useWorktrees';
+import { useWorktreeStatuses } from '@/hooks/useWorktreeStatuses';
 import { useLinear } from '@/hooks/useLinear';
 import { api } from '@/api/client';
 import type { Tab, AIStatus } from '@/types';
@@ -77,6 +78,8 @@ export function App() {
     refresh,
   } = useWorktrees();
 
+  const worktreeStatuses = useWorktreeStatuses();
+
   const { status: linearStatus, issue, comments, loadingIssue, issueError, effectiveTicketId, setupLinear } = useLinear(selectedWorktree);
 
   const refreshAIStatus = useCallback(async () => {
@@ -118,6 +121,7 @@ export function App() {
           onLinearSetup={() => setShowLinearSetup(true)}
           aiStatus={aiStatus}
           onAISetup={() => setShowAISetup(true)}
+          statuses={worktreeStatuses}
         />
 
         <AppHeader activeTab={activeTab} setActiveTab={setActiveTab} />

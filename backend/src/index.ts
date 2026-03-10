@@ -7,13 +7,16 @@ import diffRouter from './routes/diff.js';
 import commitRouter from './routes/commit.js';
 import linearRouter from './routes/linear.js';
 import aiRouter from './routes/ai.js';
+import statusRouter from './routes/status.js';
 import { setupTerminalWebSocket, preInitializeSessions } from './terminal/pty.js';
 import { discoverAllWorktrees } from './routes/worktrees.js';
 import { linearClient } from './linear/client.js';
-import { loadConfig } from './config.js';
+import { loadConfig, getInstanceName } from './config.js';
+import { findFreePort, writePortFile, registerPortFileCleanup } from './port.js';
+
+const DEFAULT_PORT = parseInt(process.env.CLAUDETREE_PORT || '3001', 10);
 
 const app = express();
-const PORT = 3001;
 
 app.use(cors());
 app.use(express.json());
@@ -24,6 +27,7 @@ app.use('/api/diff', diffRouter);
 app.use('/api/commit', commitRouter);
 app.use('/api/linear', linearRouter);
 app.use('/api/ai', aiRouter);
+app.use('/api/status', statusRouter);
 
 const server = createServer(app);
 
@@ -33,24 +37,31 @@ try {
   console.error('WebSocket/pty setup failed (node-pty may need rebuilding):', err);
 }
 
-server.listen(PORT, async () => {
-  console.log(`claudetree backend running on http://localhost:${PORT}`);
+(async () => {
+  const port = await findFreePort(DEFAULT_PORT);
+  writePortFile(port);
+  registerPortFileCleanup();
 
-  const config = loadConfig();
-  if (config.linearApiKey) {
-    linearClient.connect(config.linearApiKey).catch((err) => {
-      console.error('Linear MCP auto-connect failed:', err);
-    });
-  }
+  server.listen(port, async () => {
+    const instance = getInstanceName();
+    console.log(`claudetree [${instance}] backend on http://localhost:${port}`);
 
-  // Pre-initialize Claude Code for all worktrees so switching tabs is instant
-  try {
-    const worktrees = await discoverAllWorktrees();
-    preInitializeSessions(worktrees.map((w) => ({ id: w.id, path: w.path })));
-  } catch (err) {
-    console.error('Failed to pre-initialize worktree terminals:', err);
-  }
-});
+    const config = loadConfig();
+    if (config.linearApiKey) {
+      linearClient.connect(config.linearApiKey).catch((err) => {
+        console.error('Linear MCP auto-connect failed:', err);
+      });
+    }
+
+    // Pre-initialize Claude Code for all worktrees so switching tabs is instant
+    try {
+      const worktrees = await discoverAllWorktrees();
+      preInitializeSessions(worktrees.map((w) => ({ id: w.id, path: w.path })));
+    } catch (err) {
+      console.error('Failed to pre-initialize worktree terminals:', err);
+    }
+  });
+})();
 
 process.on('uncaughtException', (err) => {
   console.error('Uncaught exception:', err);

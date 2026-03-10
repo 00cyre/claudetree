@@ -1,9 +1,24 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
-import { join } from 'path';
+import { join, basename } from 'path';
 
 const CONFIG_DIR = join(homedir(), '.claudetree');
-const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
+const SHARED_FILE = join(CONFIG_DIR, 'shared.json');
+const LEGACY_CONFIG_FILE = join(CONFIG_DIR, 'config.json');
+
+const INSTANCE_NAME = basename(process.env.CLAUDETREE_PROJECT_ROOT || process.cwd());
+const INSTANCE_DIR = join(CONFIG_DIR, 'instances', INSTANCE_NAME);
+const INSTANCE_FILE = join(INSTANCE_DIR, 'config.json');
+
+const API_KEYS = ['linearApiKey', 'anthropicApiKey'] as const;
+
+export function getInstanceName(): string {
+  return INSTANCE_NAME;
+}
+
+export function getInstanceDir(): string {
+  return INSTANCE_DIR;
+}
 
 export interface Project {
   id: string;
@@ -13,7 +28,9 @@ export interface Project {
 }
 
 export interface WorktreeLink {
-  linearIssueId: string;
+  linearIssueId?: string;
+  description?: string;
+  linearIssueTitle?: string;
 }
 
 export interface AppConfig {
@@ -23,31 +40,108 @@ export interface AppConfig {
   worktreeLinks?: Record<string, WorktreeLink>;
 }
 
+interface SharedConfig {
+  linearApiKey?: string;
+  anthropicApiKey?: string;
+}
+
+interface InstanceConfig {
+  projects: Project[];
+  linearApiKey?: string;
+  anthropicApiKey?: string;
+  worktreeLinks?: Record<string, WorktreeLink>;
+}
+
+function ensureDir(dir: string): void {
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+}
+
+function readJson<T>(path: string): T | null {
+  if (!existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, 'utf-8')) as T;
+  } catch {
+    return null;
+  }
+}
+
+function writeJson(path: string, data: unknown): void {
+  ensureDir(join(path, '..'));
+  writeFileSync(path, JSON.stringify(data, null, 2));
+}
+
+function migrateIfNeeded(): void {
+  if (existsSync(INSTANCE_FILE)) return;
+  const legacy = readJson<AppConfig>(LEGACY_CONFIG_FILE);
+  if (!legacy) return;
+
+  // Split legacy config: API keys → shared, rest → instance
+  const shared: SharedConfig = {};
+  const instance: InstanceConfig = { projects: legacy.projects || [] };
+
+  for (const key of API_KEYS) {
+    if (legacy[key]) {
+      shared[key] = legacy[key];
+    }
+  }
+
+  if (legacy.worktreeLinks) {
+    instance.worktreeLinks = legacy.worktreeLinks;
+  }
+
+  // Write shared only if it doesn't exist yet (another instance may have migrated first)
+  if (!existsSync(SHARED_FILE)) {
+    writeJson(SHARED_FILE, shared);
+  }
+
+  writeJson(INSTANCE_FILE, instance);
+}
+
 function defaultConfig(): AppConfig {
   return { projects: [] };
 }
 
 export function loadConfig(): AppConfig {
-  if (!existsSync(CONFIG_DIR)) {
-    mkdirSync(CONFIG_DIR, { recursive: true });
-  }
-  if (!existsSync(CONFIG_FILE)) {
-    const cfg = defaultConfig();
-    saveConfig(cfg);
-    return cfg;
-  }
-  try {
-    return JSON.parse(readFileSync(CONFIG_FILE, 'utf-8')) as AppConfig;
-  } catch {
-    return defaultConfig();
-  }
+  ensureDir(CONFIG_DIR);
+  migrateIfNeeded();
+
+  const shared = readJson<SharedConfig>(SHARED_FILE) || {};
+  const instance = readJson<InstanceConfig>(INSTANCE_FILE) || { projects: [] };
+
+  // Merge: instance keys override shared if both exist
+  return {
+    projects: instance.projects || [],
+    linearApiKey: instance.linearApiKey || shared.linearApiKey,
+    anthropicApiKey: instance.anthropicApiKey || shared.anthropicApiKey,
+    worktreeLinks: instance.worktreeLinks,
+  };
 }
 
 export function saveConfig(config: AppConfig): void {
-  if (!existsSync(CONFIG_DIR)) {
-    mkdirSync(CONFIG_DIR, { recursive: true });
+  ensureDir(CONFIG_DIR);
+
+  // API keys go to shared
+  const shared = readJson<SharedConfig>(SHARED_FILE) || {};
+  for (const key of API_KEYS) {
+    if (config[key] !== undefined) {
+      shared[key] = config[key];
+    }
   }
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+  writeJson(SHARED_FILE, shared);
+
+  // Everything else goes to instance
+  const instance: InstanceConfig = {
+    projects: config.projects,
+    worktreeLinks: config.worktreeLinks,
+  };
+  // Preserve instance-level API key overrides if set
+  const prev = readJson<InstanceConfig>(INSTANCE_FILE);
+  for (const key of API_KEYS) {
+    if (prev?.[key]) {
+      instance[key] = config[key];
+    }
+  }
+  writeJson(INSTANCE_FILE, instance);
 }
 
 export function getWorktreeLink(worktreePath: string): WorktreeLink | undefined {

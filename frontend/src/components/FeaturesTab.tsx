@@ -2,7 +2,6 @@ import { TerminalView } from '@/components/Terminal';
 import { LinearTicketPanel } from '@/components/LinearTicketPanel';
 import type { Worktree, LinearIssue, LinearComment } from '@/types';
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { cn } from '@/lib/utils';
 
@@ -36,13 +35,11 @@ export function FeaturesTab({ selectedWorktree, issue, comments, loadingIssue, i
               </div>
             )}
             {!loadingIssue && issue && (
-              <ScrollArea className="flex-1">
                 <LinearTicketPanel
                   issue={issue}
                   comments={comments}
                   onUnlink={selectedWorktree?.linearIssueId ? onUnlink : undefined}
                 />
-              </ScrollArea>
             )}
             {!loadingIssue && issueError && (
               <div className="p-4 space-y-2">

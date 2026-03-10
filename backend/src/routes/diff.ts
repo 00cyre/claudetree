@@ -5,6 +5,7 @@ import { getWorktree } from './worktrees.js';
 import { loadConfig } from '../config.js';
 import { analyzeChanges, analyzeFileDetailed } from '../ai/analyzer.js';
 import type { AnalysisResult, FileDetailedAnalysis } from '../ai/analyzer.js';
+import { loadAggregateAnalysis, saveAggregateAnalysis, loadFileAnalysis, saveFileAnalysis } from '../analysis-cache.js';
 
 interface CacheEntry<T> {
   result: T;
@@ -124,8 +125,16 @@ router.post('/:worktreeId/analyze', async (req: Request, res: Response) => {
       return;
     }
 
+    const diskCached = loadAggregateAnalysis(req.params.worktreeId, cacheKey);
+    if (diskCached) {
+      changesCache.set(cacheKey, { result: diskCached, timestamp: Date.now() });
+      res.json(diskCached);
+      return;
+    }
+
     const result = await analyzeChanges(config.anthropicApiKey, withDiffs, ticketContext);
     changesCache.set(cacheKey, { result, timestamp: Date.now() });
+    saveAggregateAnalysis(req.params.worktreeId, cacheKey, result);
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: String(err) });
@@ -158,8 +167,16 @@ router.post('/:worktreeId/:file/analyze', async (req: Request, res: Response) =>
       return;
     }
 
+    const diskCached = loadFileAnalysis(req.params.worktreeId, file, cacheKey);
+    if (diskCached) {
+      fileCache.set(cacheKey, { result: diskCached, timestamp: Date.now() });
+      res.json(diskCached);
+      return;
+    }
+
     const result = await analyzeFileDetailed(config.anthropicApiKey, file, diff, ticketContext);
     fileCache.set(cacheKey, { result, timestamp: Date.now() });
+    saveFileAnalysis(req.params.worktreeId, file, cacheKey, result);
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: String(err) });

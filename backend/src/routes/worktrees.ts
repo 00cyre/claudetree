@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, cpSync } from 'fs';
 import { join } from 'path';
 import simpleGit from 'simple-git';
 import { loadConfig, saveConfig, getWorktreeLink, setWorktreeLink, removeWorktreeLink } from '../config.js';
+import { linearClient } from '../linear/client.js';
 
 const router = Router();
 
@@ -14,6 +15,7 @@ interface Worktree {
   branch: string;
   projectId: string;
   linearIssueId?: string;
+  description?: string;
 }
 
 function stableId(path: string): string {
@@ -48,7 +50,8 @@ export async function discoverAllWorktrees(): Promise<Worktree[]> {
         if (wtPath && branch && wtPath !== project.path) {
           const id = stableId(wtPath);
           const link = getWorktreeLink(wtPath);
-          const wt: Worktree = { id, name: branch, path: wtPath, branch, projectId: project.id, linearIssueId: link?.linearIssueId };
+          const description = link?.description ?? link?.linearIssueTitle;
+          const wt: Worktree = { id, name: branch, path: wtPath, branch, projectId: project.id, linearIssueId: link?.linearIssueId, description };
           worktreeRegistry.set(id, wt);
           allWorktrees.push(wt);
         }
@@ -83,7 +86,8 @@ router.get('/:projectId', async (req: Request, res: Response) => {
       if (wtPath && branch && wtPath !== project.path) {
         const id = stableId(wtPath);
         const link = getWorktreeLink(wtPath);
-        const wt: Worktree = { id, name: branch, path: wtPath, branch, projectId, linearIssueId: link?.linearIssueId };
+        const description = link?.description ?? link?.linearIssueTitle;
+        const wt: Worktree = { id, name: branch, path: wtPath, branch, projectId, linearIssueId: link?.linearIssueId, description };
         worktreeRegistry.set(id, wt);
         worktrees.push(wt);
       }
@@ -185,8 +189,22 @@ router.post('/:projectId/:worktreeId/link', async (req: Request, res: Response) 
     return;
   }
 
-  setWorktreeLink(wt.path, { linearIssueId: linearIssueId.trim() });
-  wt.linearIssueId = linearIssueId.trim();
+  const trimmedId = linearIssueId.trim();
+  const linkData: { linearIssueId: string; linearIssueTitle?: string } = { linearIssueId: trimmedId };
+
+  // Try to cache the Linear issue title
+  try {
+    const issue = await linearClient.getIssue(trimmedId);
+    if (issue?.title) {
+      linkData.linearIssueTitle = issue.title;
+      wt.description = issue.title;
+    }
+  } catch {
+    // Linear may not be connected; link without title
+  }
+
+  setWorktreeLink(wt.path, linkData);
+  wt.linearIssueId = trimmedId;
   res.json({ ok: true });
 });
 

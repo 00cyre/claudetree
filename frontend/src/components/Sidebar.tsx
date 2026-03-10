@@ -1,6 +1,10 @@
-import type { Project, Worktree, LinearStatus, AIStatus } from '@/types';
+import type { Project, Worktree, LinearStatus, AIStatus, SessionStatus, ClaudeActivityState } from '@/types';
 import { extractTicketIdFromBranch } from '@/utils/linear';
-import { GitBranch, Plus, X, Link2, Bot, Folder } from 'lucide-react';
+import { X, Link2, Folder, CheckCircle2, AlertCircle, Circle } from 'lucide-react';
+import { GitBranchIcon } from '@/components/ui/git-branch';
+import { PlusIcon } from '@/components/ui/plus';
+import { BotIcon } from '@/components/ui/bot';
+import { Spinner } from '@/components/ui/spinner';
 import {
   Sidebar as SidebarRoot,
   SidebarContent,
@@ -26,6 +30,125 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
+function formatElapsed(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h`;
+}
+
+const STATUS_DOT_STYLES: Record<ClaudeActivityState, string> = {
+  booting: 'bg-gray-400 animate-pulse',
+  active: 'bg-amber-400 animate-pulse',
+  idle: 'bg-emerald-400',
+  exited: 'bg-gray-400',
+  error: 'bg-red-400',
+};
+
+function StatusDot({ state }: { state: ClaudeActivityState }) {
+  return (
+    <span className={cn('size-2 rounded-full shrink-0', STATUS_DOT_STYLES[state])} />
+  );
+}
+
+const STATUS_LABEL: Record<ClaudeActivityState, { label: string; className: string }> = {
+  booting: { label: 'Starting...', className: 'text-muted-foreground' },
+  active: { label: 'Working', className: 'text-amber-600 dark:text-amber-400' },
+  idle: { label: 'Ready for review', className: 'text-emerald-600 dark:text-emerald-400' },
+  exited: { label: 'Session ended', className: 'text-muted-foreground' },
+  error: { label: 'Error', className: 'text-red-600 dark:text-red-400' },
+};
+
+function ActivityLine({ status }: { status: SessionStatus }) {
+  const elapsed = formatElapsed(Date.now() - status.stateStartedAt);
+  const { label, className } = STATUS_LABEL[status.state];
+
+  const icon = (() => {
+    switch (status.state) {
+      case 'booting':
+      case 'active':
+        return <Spinner className="size-3" />;
+      case 'idle':
+        return <CheckCircle2 className="size-3 shrink-0" />;
+      case 'error':
+        return <AlertCircle className="size-3 shrink-0" />;
+      case 'exited':
+        return <Circle className="size-3 shrink-0" />;
+    }
+  })();
+
+  return (
+    <span className={cn('flex items-center gap-1', className)}>
+      {icon}
+      <span className="truncate">{label}</span>
+      {status.state !== 'exited' && (
+        <span className="shrink-0 text-muted-foreground">({elapsed})</span>
+      )}
+    </span>
+  );
+}
+
+function WorktreeItem({
+  wt,
+  isActive,
+  status,
+  onSelect,
+  onDelete,
+}: {
+  wt: Worktree;
+  isActive: boolean;
+  status?: SessionStatus;
+  onSelect: () => void;
+  onDelete: () => void;
+}) {
+  const ticketId = wt.linearIssueId ?? extractTicketIdFromBranch(wt.name);
+  const description = status?.description ?? wt.description;
+
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        isActive={isActive}
+        tooltip={wt.name}
+        onClick={onSelect}
+        className="h-auto py-1.5"
+      >
+        <div className="flex items-start gap-1.5 min-w-0 w-full">
+          {status && <StatusDot state={status.state} />}
+          <GitBranchIcon size={16} className="shrink-0 mt-0.5" />
+          <div className="flex flex-col min-w-0 gap-0.5">
+            <span className="truncate text-sm leading-tight">{wt.name}</span>
+            {ticketId && (
+              <span className="text-[10px] text-muted-foreground truncate leading-tight" title={ticketId}>
+                {ticketId}
+              </span>
+            )}
+            {description && (
+              <span className="text-[10px] text-muted-foreground/80 truncate leading-tight italic" title={description}>
+                {description}
+              </span>
+            )}
+            {status && (
+              <div className="text-[10px] leading-tight">
+                <ActivityLine status={status} />
+              </div>
+            )}
+          </div>
+        </div>
+      </SidebarMenuButton>
+      <SidebarMenuAction
+        showOnHover
+        className="text-muted-foreground hover:text-destructive"
+        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        title="Remove worktree"
+      >
+        <X className="size-3" />
+      </SidebarMenuAction>
+    </SidebarMenuItem>
+  );
+}
+
 export interface SidebarProps {
   projects: Project[];
   selectedProject: Project | null;
@@ -41,6 +164,7 @@ export interface SidebarProps {
   onLinearSetup: () => void;
   aiStatus: AIStatus;
   onAISetup: () => void;
+  statuses: Map<string, SessionStatus>;
 }
 
 export function AppSidebar({
@@ -58,6 +182,7 @@ export function AppSidebar({
   onLinearSetup,
   aiStatus,
   onAISetup,
+  statuses,
 }: SidebarProps) {
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
@@ -93,7 +218,7 @@ export function AppSidebar({
                 className="size-8 shrink-0 flex items-center justify-center rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                 title="Add project"
               >
-                <Plus className="size-4" />
+                <PlusIcon size={16} />
               </button>
             )}
           </div>
@@ -104,7 +229,7 @@ export function AppSidebar({
         <SidebarGroup>
           <SidebarGroupLabel>Worktrees</SidebarGroupLabel>
           <SidebarGroupAction title="New worktree" onClick={onNewWorktree}>
-            <Plus className="size-4" />
+            <PlusIcon size={16} />
           </SidebarGroupAction>
           <SidebarGroupContent>
             {loading ? (
@@ -113,37 +238,16 @@ export function AppSidebar({
               <div className="px-2 py-2 text-sm text-muted-foreground">No worktrees</div>
             ) : (
               <SidebarMenu className="gap-1.5">
-                {worktrees.map((wt) => {
-                  const ticketId = wt.linearIssueId ?? extractTicketIdFromBranch(wt.name);
-                  const isActive = selectedWorktree?.id === wt.id;
-                  return (
-                    <SidebarMenuItem key={wt.id}>
-                      <SidebarMenuButton
-                        isActive={isActive}
-                        tooltip={wt.name}
-                        onClick={() => onSelectWorktree(wt)}
-                      >
-                        <GitBranch className="size-4 shrink-0" />
-                        <div className="flex flex-col min-w-0">
-                          <span className="truncate">{wt.name}</span>
-                          {ticketId && (
-                            <span className="text-[10px] text-muted-foreground truncate" title={ticketId}>
-                              {ticketId}
-                            </span>
-                          )}
-                        </div>
-                      </SidebarMenuButton>
-                      <SidebarMenuAction
-                        showOnHover
-                        className="text-muted-foreground hover:text-destructive"
-                        onClick={(e) => { e.stopPropagation(); onDeleteWorktree(wt.id); }}
-                        title="Remove worktree"
-                      >
-                        <X className="size-3" />
-                      </SidebarMenuAction>
-                    </SidebarMenuItem>
-                  );
-                })}
+                {worktrees.map((wt) => (
+                  <WorktreeItem
+                    key={wt.id}
+                    wt={wt}
+                    isActive={selectedWorktree?.id === wt.id}
+                    status={statuses.get(wt.id)}
+                    onSelect={() => onSelectWorktree(wt)}
+                    onDelete={() => onDeleteWorktree(wt.id)}
+                  />
+                ))}
               </SidebarMenu>
             )}
           </SidebarGroupContent>
@@ -175,7 +279,7 @@ export function AppSidebar({
                 aiStatus.connected && 'text-green-600 dark:text-green-400'
               )}
             >
-              <Bot className="size-4 shrink-0" />
+              <BotIcon size={16} className="shrink-0" />
               <span>{aiStatus.connected ? 'AI connected' : 'Connect AI'}</span>
               {aiStatus.connected && (
                 <span className="ml-auto size-2 rounded-full bg-green-500 shrink-0" />

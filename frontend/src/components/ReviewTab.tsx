@@ -29,57 +29,86 @@ export function ReviewTab({ selectedWorktree, aiConnected, issue, refreshKey = 0
   const [files, setFiles] = useState<ChangedFile[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [analysis, setAnalysis] = useState<FileAnalysis | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const lastAnalyzedId = useRef<string | null>(null);
+
+  // Cache analysis results per worktree so tab switching doesn't re-trigger
+  const analysisCache = useRef<Map<string, FileAnalysis>>(new Map());
+  const lastLoadedWorktreeId = useRef<string | null>(null);
+  const lastRefreshKey = useRef(refreshKey);
+
+  const worktreeId = selectedWorktree?.id ?? null;
+
+  const analysis = worktreeId ? (analysisCache.current.get(worktreeId) ?? null) : null;
 
   const ticketContext = useMemo<TicketContext | undefined>(() => {
     if (!issue) return undefined;
     return { id: issue.identifier, title: issue.title, description: issue.description };
-  }, [issue]);
+  }, [issue?.identifier, issue?.title, issue?.description]);
 
+  // Load files when worktree changes or refreshKey bumps
   const loadFiles = useCallback(async () => {
-    if (!selectedWorktree) return;
+    if (!worktreeId || !selectedWorktree) return;
+
+    const worktreeChanged = lastLoadedWorktreeId.current !== worktreeId;
+    const refreshed = lastRefreshKey.current !== refreshKey;
+
+    // Skip if same worktree and no refresh requested
+    if (!worktreeChanged && !refreshed) return;
+
+    lastLoadedWorktreeId.current = worktreeId;
+    lastRefreshKey.current = refreshKey;
+
     setLoading(true);
     try {
-      const data = await api.getDiff(selectedWorktree.id);
+      const data = await api.getDiff(worktreeId);
       setFiles(data.files);
-      setSelectedFile(null);
+
+      // Only clear selected file when switching worktrees, not on refresh
+      if (worktreeChanged) {
+        setSelectedFile(null);
+      }
+
+      // Invalidate cached analysis on refresh (files may have changed)
+      if (refreshed) {
+        analysisCache.current.delete(worktreeId);
+      }
     } catch (err) {
       console.error('Failed to load diff:', err);
     } finally {
       setLoading(false);
     }
-  }, [selectedWorktree]);
+  }, [worktreeId, selectedWorktree, refreshKey]);
 
   useEffect(() => {
     loadFiles();
-    setAnalysis(null);
-    lastAnalyzedId.current = null;
-  }, [loadFiles, refreshKey]);
+  }, [loadFiles]);
 
+  // Run analysis only when: we have files, AI is connected, and no cached result exists
   useEffect(() => {
-    if (!selectedWorktree || !aiConnected || files.length === 0) return;
-    if (lastAnalyzedId.current === selectedWorktree.id) return;
+    if (!worktreeId || !aiConnected || files.length === 0 || loading) return;
+    if (analysisCache.current.has(worktreeId)) return;
 
     let cancelled = false;
     setAnalyzing(true);
-    lastAnalyzedId.current = selectedWorktree.id;
 
-    api.analyzeChanges(selectedWorktree.id, ticketContext)
+    api.analyzeChanges(worktreeId, ticketContext)
       .then((result) => {
-        if (!cancelled) setAnalysis(result);
+        if (!cancelled) {
+          analysisCache.current.set(worktreeId, result);
+          // Force re-render by setting a state that depends on cache
+          setAnalyzing(false);
+        }
       })
       .catch((err) => {
         console.error('Analysis failed:', err);
-        if (!cancelled) lastAnalyzedId.current = null;
-      })
-      .finally(() => {
         if (!cancelled) setAnalyzing(false);
       });
 
     return () => { cancelled = true; };
-  }, [selectedWorktree, aiConnected, files, ticketContext]);
+    // Only re-run when worktreeId changes, files load, or AI connects
+    // ticketContext is intentionally excluded to avoid re-triggering on issue refetch
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [worktreeId, aiConnected, files, loading]);
 
   if (!selectedWorktree) {
     return (
@@ -115,7 +144,7 @@ export function ReviewTab({ selectedWorktree, aiConnected, issue, refreshKey = 0
         {analysis?.summary && (
           <div className="p-3 text-xs text-muted-foreground border-b border-border">{analysis.summary}</div>
         )}
-        {analyzing && (
+        {analyzing && !analysis && (
           <div className="px-3 py-2 text-xs text-muted-foreground flex items-center gap-2">
             <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
             Analyzing changes...

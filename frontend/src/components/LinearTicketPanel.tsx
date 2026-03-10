@@ -1,11 +1,10 @@
 import Markdown from 'react-markdown';
-import { GitBranch, ExternalLink } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
+import { GitBranchIcon } from '@/components/ui/git-branch';
 import type { LinearIssue, LinearComment } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { cn } from '@/lib/utils';
-
 interface LinearTicketPanelProps {
   issue: LinearIssue;
   comments: LinearComment[];
@@ -134,7 +133,7 @@ export function LinearTicketPanel({ issue, comments, onUnlink }: LinearTicketPan
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    <GitBranch className="size-3" />
+                    <GitBranchIcon size={12} />
                     <span>{att.title}</span>
                   </a>
                 ))}

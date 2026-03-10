@@ -12,6 +12,16 @@ export interface Worktree {
   branch: string;
   projectId: string;
   linearIssueId?: string;
+  description?: string;
+}
+
+export type ClaudeActivityState = 'booting' | 'active' | 'idle' | 'exited' | 'error';
+
+export interface SessionStatus {
+  state: ClaudeActivityState;
+  lastActivity: number;
+  stateStartedAt: number;
+  description?: string;
 }
 
 export interface ChangedFile {
