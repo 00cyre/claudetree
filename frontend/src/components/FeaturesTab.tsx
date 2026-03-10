@@ -3,6 +3,7 @@ import { LinearTicketPanel } from '@/components/LinearTicketPanel';
 import type { Worktree, LinearIssue, LinearComment } from '@/types';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { cn } from '@/lib/utils';
 
 interface FeaturesTabProps {
@@ -13,17 +14,22 @@ interface FeaturesTabProps {
   issueError: string | null;
   effectiveTicketId: string | null;
   onUnlink: () => void;
+  onTerminalExit?: () => void;
 }
 
-export function FeaturesTab({ selectedWorktree, issue, comments, loadingIssue, issueError, effectiveTicketId, onUnlink }: FeaturesTabProps) {
+export function FeaturesTab({ selectedWorktree, issue, comments, loadingIssue, issueError, effectiveTicketId, onUnlink, onTerminalExit }: FeaturesTabProps) {
   return (
     <div className="flex flex-col h-full">
-      <div className="flex flex-1 min-h-0">
-        <div className="flex-1 flex flex-col min-w-0">
-          <TerminalView worktreeId={selectedWorktree?.id ?? null} />
-        </div>
-        {effectiveTicketId && (
-          <div className="w-80 min-w-80 flex flex-col border-l border-border overflow-hidden">
+      {effectiveTicketId ? (
+        <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0" defaultLayout={{ terminal: 65, ticket: 35 }}>
+          <ResizablePanel id="terminal" className="min-h-0">
+            <div className="h-full min-h-0 flex flex-col">
+              <TerminalView worktreeId={selectedWorktree?.id ?? null} onExit={onTerminalExit} />
+            </div>
+          </ResizablePanel>
+          <ResizableHandle withHandle />
+          <ResizablePanel id="ticket">
+            <div className="flex flex-col h-full overflow-hidden">
             {loadingIssue && (
               <div className="flex items-center justify-center p-6 text-sm text-muted-foreground">
                 Loading issue...
@@ -57,9 +63,14 @@ export function FeaturesTab({ selectedWorktree, issue, comments, loadingIssue, i
                 )}
               </div>
             )}
-          </div>
-        )}
-      </div>
+            </div>
+          </ResizablePanel>
+        </ResizablePanelGroup>
+      ) : (
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
+          <TerminalView worktreeId={selectedWorktree?.id ?? null} onExit={onTerminalExit} />
+        </div>
+      )}
     </div>
   );
 }

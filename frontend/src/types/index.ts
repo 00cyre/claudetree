@@ -97,4 +97,10 @@ export interface FileDetailedAnalysis {
   steps: HunkExplanation[];
 }
 
+export interface TicketContext {
+  id: string;
+  title: string;
+  description?: string;
+}
+
 export type Tab = 'features' | 'review';

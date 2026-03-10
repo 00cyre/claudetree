@@ -1,15 +1,54 @@
 import { useState, useCallback, useEffect } from 'react';
-import { Sidebar } from '@/components/Sidebar';
+import { AppSidebar } from '@/components/Sidebar';
 import { FeaturesTab } from '@/components/FeaturesTab';
 import { ReviewTab } from '@/components/ReviewTab';
 import { NewWorktreeModal } from '@/components/NewWorktreeModal';
 import { LinearSetupModal } from '@/components/LinearSetupModal';
 import { AnthropicSetupModal } from '@/components/AnthropicSetupModal';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useWorktrees } from '@/hooks/useWorktrees';
 import { useLinear } from '@/hooks/useLinear';
 import { api } from '@/api/client';
 import type { Tab, AIStatus } from '@/types';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
+import { SidebarProvider, SidebarInset, useSidebar } from '@/components/ui/sidebar';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { TreePine } from 'lucide-react';
+
+function AppHeader({ activeTab, setActiveTab }: { activeTab: Tab; setActiveTab: (t: Tab) => void }) {
+  const { state } = useSidebar();
+  const sidebarWidth = state === 'collapsed'
+    ? 'var(--sidebar-width-icon)'
+    : 'var(--sidebar-width)';
+  return (
+    <header
+      className="fixed top-0 left-0 right-0 h-12 z-10 border-b border-border bg-card flex items-center gap-3 px-4 transition-[padding-left] duration-200 ease-linear"
+      style={{ paddingLeft: `calc(${sidebarWidth} + 1rem)` }}
+    >
+      <div className="flex items-center gap-2 shrink-0">
+        <TreePine className="size-5 text-primary" />
+        <span className="text-sm font-semibold text-primary">claudetree</span>
+      </div>
+      <ButtonGroup>
+        <Button
+          size="sm"
+          variant={activeTab === 'features' ? 'default' : 'ghost'}
+          onClick={() => setActiveTab('features')}
+        >
+          Features
+        </Button>
+        <Button
+          size="sm"
+          variant={activeTab === 'review' ? 'default' : 'ghost'}
+          onClick={() => setActiveTab('review')}
+        >
+          Review
+        </Button>
+      </ButtonGroup>
+    </header>
+  );
+}
 
 export function App() {
   const [activeTab, setActiveTab] = useState<Tab>('features');
@@ -17,6 +56,12 @@ export function App() {
   const [showLinearSetup, setShowLinearSetup] = useState(false);
   const [showAISetup, setShowAISetup] = useState(false);
   const [aiStatus, setAIStatus] = useState<AIStatus>({ configured: false, connected: false });
+  const [reviewRefreshKey, setReviewRefreshKey] = useState(0);
+
+  const handleTerminalExit = useCallback(() => {
+    setReviewRefreshKey((k) => k + 1);
+    setActiveTab('review');
+  }, []);
 
   const {
     projects,
@@ -56,19 +101,9 @@ export function App() {
   }, [selectedProject, selectedWorktree, refresh, setSelectedWorktree]);
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-background text-foreground">
-      <header className="flex items-center gap-6 px-4 h-12 border-b border-border bg-card shrink-0">
-        <h1 className="text-base font-semibold text-primary">claudetree</h1>
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Tab)} className="flex-1">
-          <TabsList variant="line" className="bg-transparent p-0 h-auto gap-1">
-            <TabsTrigger value="features">Features</TabsTrigger>
-            <TabsTrigger value="review">Review</TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </header>
-
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar
+    <TooltipProvider>
+      <SidebarProvider>
+        <AppSidebar
           projects={projects}
           selectedProject={selectedProject}
           onSelectProject={setSelectedProject}
@@ -77,6 +112,7 @@ export function App() {
           onSelectWorktree={setSelectedWorktree}
           onNewWorktree={() => setShowModal(true)}
           onDeleteWorktree={deleteWorktree}
+          onAddProject={() => setShowModal(true)}
           loading={loading}
           linearStatus={linearStatus}
           onLinearSetup={() => setShowLinearSetup(true)}
@@ -84,46 +120,54 @@ export function App() {
           onAISetup={() => setShowAISetup(true)}
         />
 
-        <main className="flex-1 overflow-hidden flex flex-col min-w-0">
-          {activeTab === 'features' ? (
-            <FeaturesTab
-              selectedWorktree={selectedWorktree}
-              issue={issue}
-              comments={comments}
-              loadingIssue={loadingIssue}
-              issueError={issueError}
-              effectiveTicketId={effectiveTicketId}
-              onUnlink={handleUnlink}
-            />
-          ) : (
-            <ReviewTab selectedWorktree={selectedWorktree} aiConnected={aiStatus.connected} />
-          )}
-        </main>
-      </div>
+        <AppHeader activeTab={activeTab} setActiveTab={setActiveTab} />
 
-      {showModal && (
-        <NewWorktreeModal
-          onClose={() => setShowModal(false)}
-          onCreate={createWorktree}
-          onAddProject={addProject}
-          hasProject={!!selectedProject}
-          linearConnected={linearStatus.connected}
-        />
-      )}
+        <SidebarInset className="flex flex-col h-screen overflow-hidden pt-12">
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col min-w-0">
+            <ErrorBoundary>
+              <div className={activeTab === 'features' ? 'flex-1 flex flex-col min-h-0' : 'hidden'}>
+                <FeaturesTab
+                  selectedWorktree={selectedWorktree}
+                  issue={issue}
+                  comments={comments}
+                  loadingIssue={loadingIssue}
+                  issueError={issueError}
+                  effectiveTicketId={effectiveTicketId}
+                  onUnlink={handleUnlink}
+                  onTerminalExit={handleTerminalExit}
+                />
+              </div>
+              <div className={activeTab === 'review' ? 'flex-1 flex flex-col min-h-0' : 'hidden'}>
+                <ReviewTab selectedWorktree={selectedWorktree} aiConnected={aiStatus.connected} issue={issue} refreshKey={reviewRefreshKey} />
+              </div>
+            </ErrorBoundary>
+          </div>
+        </SidebarInset>
 
-      {showLinearSetup && (
-        <LinearSetupModal
-          onClose={() => setShowLinearSetup(false)}
-          onSetup={setupLinear}
-        />
-      )}
+        {showModal && (
+          <NewWorktreeModal
+            onClose={() => setShowModal(false)}
+            onCreate={createWorktree}
+            onAddProject={addProject}
+            hasProject={!!selectedProject}
+            linearConnected={linearStatus.connected}
+          />
+        )}
 
-      {showAISetup && (
-        <AnthropicSetupModal
-          onClose={() => setShowAISetup(false)}
-          onSetup={handleAISetup}
-        />
-      )}
-    </div>
+        {showLinearSetup && (
+          <LinearSetupModal
+            onClose={() => setShowLinearSetup(false)}
+            onSetup={setupLinear}
+          />
+        )}
+
+        {showAISetup && (
+          <AnthropicSetupModal
+            onClose={() => setShowAISetup(false)}
+            onSetup={handleAISetup}
+          />
+        )}
+      </SidebarProvider>
+    </TooltipProvider>
   );
 }

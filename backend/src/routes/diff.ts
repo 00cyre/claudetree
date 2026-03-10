@@ -1,8 +1,35 @@
 import { Router, Request, Response } from 'express';
+import { createHash } from 'crypto';
 import simpleGit from 'simple-git';
 import { getWorktree } from './worktrees.js';
 import { loadConfig } from '../config.js';
 import { analyzeChanges, analyzeFileDetailed } from '../ai/analyzer.js';
+import type { AnalysisResult, FileDetailedAnalysis } from '../ai/analyzer.js';
+
+interface CacheEntry<T> {
+  result: T;
+  timestamp: number;
+}
+
+const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+const changesCache = new Map<string, CacheEntry<AnalysisResult>>();
+const fileCache = new Map<string, CacheEntry<FileDetailedAnalysis>>();
+
+function hashContent(parts: string[]): string {
+  const h = createHash('sha256');
+  for (const p of parts) h.update(p);
+  return h.digest('hex');
+}
+
+function getCached<T>(cache: Map<string, CacheEntry<T>>, key: string): T | null {
+  const entry = cache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > CACHE_TTL) {
+    cache.delete(key);
+    return null;
+  }
+  return entry.result;
+}
 
 const router = Router();
 
@@ -85,7 +112,20 @@ router.post('/:worktreeId/analyze', async (req: Request, res: Response) => {
       }),
     );
 
-    const result = await analyzeChanges(config.anthropicApiKey, fileDiffs.filter((f) => f.diff));
+    const ticketContext = req.body?.ticketContext as { id: string; title: string; description?: string } | undefined;
+    const withDiffs = fileDiffs.filter((f) => f.diff);
+    const cacheKey = hashContent([
+      ...withDiffs.flatMap((f) => [f.file, f.diff]),
+      ticketContext?.id ?? '',
+    ]);
+    const cached = getCached(changesCache, cacheKey);
+    if (cached) {
+      res.json(cached);
+      return;
+    }
+
+    const result = await analyzeChanges(config.anthropicApiKey, withDiffs, ticketContext);
+    changesCache.set(cacheKey, { result, timestamp: Date.now() });
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: String(err) });
@@ -107,9 +147,19 @@ router.post('/:worktreeId/:file/analyze', async (req: Request, res: Response) =>
 
   const file = decodeURIComponent(req.params.file);
   try {
+    const ticketContext = req.body?.ticketContext as { id: string; title: string; description?: string } | undefined;
     const git = simpleGit(wt.path);
     const diff = await git.diff(['HEAD', '--', file]);
-    const result = await analyzeFileDetailed(config.anthropicApiKey, file, diff);
+
+    const cacheKey = hashContent([file, diff, ticketContext?.id ?? '']);
+    const cached = getCached(fileCache, cacheKey);
+    if (cached) {
+      res.json(cached);
+      return;
+    }
+
+    const result = await analyzeFileDetailed(config.anthropicApiKey, file, diff, ticketContext);
+    fileCache.set(cacheKey, { result, timestamp: Date.now() });
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: String(err) });

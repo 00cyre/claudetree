@@ -1,4 +1,5 @@
 import Markdown from 'react-markdown';
+import { GitBranch, ExternalLink } from 'lucide-react';
 import type { LinearIssue, LinearComment } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -32,21 +33,6 @@ function timeAgo(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString();
 }
 
-function GitBranchIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-      <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25z" />
-    </svg>
-  );
-}
-
-function ExternalLinkIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-      <path d="M3.75 2A1.75 1.75 0 0 0 2 3.75v8.5c0 .966.784 1.75 1.75 1.75h8.5A1.75 1.75 0 0 0 14 12.25v-3.5a.75.75 0 0 0-1.5 0v3.5a.25.25 0 0 1-.25.25h-8.5a.25.25 0 0 1-.25-.25v-8.5a.25.25 0 0 1 .25-.25h3.5a.75.75 0 0 0 0-1.5h-3.5zm6.25 0a.75.75 0 0 0 0 1.5h2.19L6.22 9.47a.75.75 0 0 0 1.06 1.06l5.97-5.97v2.19a.75.75 0 0 0 1.5 0V2.75a.75.75 0 0 0-.75-.75H10z" />
-    </svg>
-  );
-}
 
 export function LinearTicketPanel({ issue, comments, onUnlink }: LinearTicketPanelProps) {
   return (
@@ -59,7 +45,7 @@ export function LinearTicketPanel({ issue, comments, onUnlink }: LinearTicketPan
             target="_blank"
             rel="noopener noreferrer"
           >
-            {issue.identifier} <ExternalLinkIcon />
+            {issue.identifier} <ExternalLink className="size-3" />
           </a>
           {issue.team && (
             <Badge variant="secondary" className="text-xs">{issue.team}</Badge>
@@ -148,7 +134,7 @@ export function LinearTicketPanel({ issue, comments, onUnlink }: LinearTicketPan
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    <GitBranchIcon />
+                    <GitBranch className="size-3" />
                     <span>{att.title}</span>
                   </a>
                 ))}

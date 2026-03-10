@@ -99,7 +99,8 @@ export function CommitPanel({ worktreeId, files, onCommit, linearIssueId }: Comm
         className="mb-2 resize-y"
       />
       <Button
-        className="w-full bg-green-600 hover:bg-green-700 text-white"
+        variant="success"
+        className="w-full"
         onClick={handleCommit}
         disabled={committing || !message.trim() || staged.size === 0}
       >

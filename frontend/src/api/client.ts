@@ -1,4 +1,4 @@
-import type { Project, Worktree, DiffResult, FileDiff, LinearIssue, LinearComment, LinearStatus, AIStatus, FileAnalysis, FileDetailedAnalysis } from '../types/index.js';
+import type { Project, Worktree, DiffResult, FileDiff, LinearIssue, LinearComment, LinearStatus, AIStatus, FileAnalysis, FileDetailedAnalysis, TicketContext } from '../types/index.js';
 
 const BASE = '/api';
 
@@ -82,9 +82,15 @@ export const api = {
       body: JSON.stringify({ apiKey }),
     }),
 
-  analyzeChanges: (worktreeId: string) =>
-    request<FileAnalysis>(`/diff/${worktreeId}/analyze`, { method: 'POST' }),
+  analyzeChanges: (worktreeId: string, ticketContext?: TicketContext) =>
+    request<FileAnalysis>(`/diff/${worktreeId}/analyze`, {
+      method: 'POST',
+      body: JSON.stringify({ ticketContext }),
+    }),
 
-  analyzeFile: (worktreeId: string, file: string) =>
-    request<FileDetailedAnalysis>(`/diff/${worktreeId}/${encodeURIComponent(file)}/analyze`, { method: 'POST' }),
+  analyzeFile: (worktreeId: string, file: string, ticketContext?: TicketContext) =>
+    request<FileDetailedAnalysis>(`/diff/${worktreeId}/${encodeURIComponent(file)}/analyze`, {
+      method: 'POST',
+      body: JSON.stringify({ ticketContext }),
+    }),
 };

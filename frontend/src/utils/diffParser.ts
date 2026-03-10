@@ -45,8 +45,12 @@ export function parseDiffHunks(diff: string): DiffHunk[] {
   return hunks;
 }
 
-export function hunkToPatch(hunk: DiffHunk): string {
-  return hunk.lines.join("\n");
+export function hunkToPatch(hunk: DiffHunk, filePath?: string): string {
+  const hunkBody = hunk.lines.join("\n");
+  if (!filePath) return hunkBody;
+  const a = `a/${filePath}`;
+  const b = `b/${filePath}`;
+  return `--- ${a}\n+++ ${b}\n${hunkBody}`;
 }
 
 export function describeHunk(hunk: DiffHunk): string {

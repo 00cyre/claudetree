@@ -4,6 +4,7 @@ import '@xterm/xterm/css/xterm.css';
 
 interface TerminalProps {
   worktreeId: string | null;
+  onExit?: () => void;
 }
 
 function getStatusMessage(status: TerminalStatus, errorMessage: string | null): string | null {
@@ -16,9 +17,9 @@ function getStatusMessage(status: TerminalStatus, errorMessage: string | null): 
   return null;
 }
 
-export function TerminalView({ worktreeId }: TerminalProps) {
+export function TerminalView({ worktreeId, onExit }: TerminalProps) {
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
-  const { status, errorMessage } = useTerminal(worktreeId, container);
+  const { status, errorMessage } = useTerminal(worktreeId, container, onExit);
 
   if (!worktreeId) {
     return (

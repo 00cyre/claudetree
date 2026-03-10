@@ -11,6 +11,12 @@ interface FileDiff {
   diff: string;
 }
 
+interface TicketContext {
+  id: string;
+  title: string;
+  description?: string;
+}
+
 function isOAuthToken(key: string): boolean {
   return key.startsWith('sk-ant-oat');
 }
@@ -47,6 +53,7 @@ Return ONLY valid JSON with this exact structure:
 export async function analyzeChanges(
   apiKey: string,
   fileDiffs: FileDiff[],
+  ticketContext?: TicketContext,
 ): Promise<AnalysisResult> {
   if (fileDiffs.length === 0) {
     return { sortOrder: [], explanations: {}, summary: 'No changes.' };
@@ -58,6 +65,11 @@ export async function analyzeChanges(
     .map((fd) => `### ${fd.file}\n\`\`\`diff\n${fd.diff.slice(0, 4000)}\n\`\`\``)
     .join('\n\n');
 
+  let ticketSection = '';
+  if (ticketContext) {
+    ticketSection = `\n\nThis work is for ticket **${ticketContext.id}: ${ticketContext.title}**.${ticketContext.description ? `\n\nTicket description:\n${ticketContext.description.slice(0, 2000)}` : ''}\n\nRelate your explanations to this ticket — explain how each file's changes contribute to the ticket's goal.\n\n`;
+  }
+
   const response = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 2048,
@@ -65,7 +77,7 @@ export async function analyzeChanges(
     messages: [
       {
         role: 'user',
-        content: `Analyze these ${fileDiffs.length} changed files:\n\n${userContent}`,
+        content: `${ticketSection}Analyze these ${fileDiffs.length} changed files:\n\n${userContent}`,
       },
     ],
   });
@@ -138,12 +150,18 @@ export async function analyzeFileDetailed(
   apiKey: string,
   file: string,
   diff: string,
+  ticketContext?: TicketContext,
 ): Promise<FileDetailedAnalysis> {
   if (!diff.trim()) {
     return { file, overview: 'No changes.', steps: [] };
   }
 
   const client = createClient(apiKey);
+
+  let ticketSection = '';
+  if (ticketContext) {
+    ticketSection = `This work is for ticket **${ticketContext.id}: ${ticketContext.title}**.${ticketContext.description ? `\nTicket description: ${ticketContext.description.slice(0, 1000)}` : ''}\nRelate your explanations to the ticket's goal.\n\n`;
+  }
 
   const response = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
@@ -152,7 +170,7 @@ export async function analyzeFileDetailed(
     messages: [
       {
         role: 'user',
-        content: `Analyze this diff for \`${file}\`:\n\n\`\`\`diff\n${diff.slice(0, 8000)}\n\`\`\``,
+        content: `${ticketSection}Analyze this diff for \`${file}\`:\n\n\`\`\`diff\n${diff.slice(0, 8000)}\n\`\`\``,
       },
     ],
   });

@@ -5,7 +5,7 @@ import { ChainOfThought } from "@/components/ChainOfThought";
 import { CodeDiff } from "@/components/tool-ui/code-diff";
 import { parseDiffHunks, hunkToPatch, describeHunk } from "@/utils/diffParser";
 import { languageFromFilename } from "@/utils/language";
-import type { FileDetailedAnalysis, HunkExplanation } from "@/types";
+import type { FileDetailedAnalysis, HunkExplanation, TicketContext } from "@/types";
 import type { StepStatus } from "@/components/ChainOfThought";
 import { Loader2 } from "lucide-react";
 
@@ -14,6 +14,7 @@ interface DiffViewerProps {
   file: string;
   explanation?: string;
   aiConnected?: boolean;
+  ticketContext?: TicketContext;
 }
 
 export function DiffViewer({
@@ -21,6 +22,7 @@ export function DiffViewer({
   file,
   explanation,
   aiConnected,
+  ticketContext,
 }: DiffViewerProps) {
   const [diff, setDiff] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -46,7 +48,7 @@ export function DiffViewer({
     setAnalyzing(true);
 
     api
-      .analyzeFile(worktreeId, file)
+      .analyzeFile(worktreeId, file, ticketContext)
       .then((result) => {
         if (!cancelled) setFileAnalysis(result);
       })
@@ -143,7 +145,7 @@ export function DiffViewer({
                     <div className="mt-2">
                       <CodeDiff
                         id={`${file}-hunk-${i}`}
-                        patch={hunkToPatch(hunk)}
+                        patch={hunkToPatch(hunk, file)}
                         language={language}
                         filename={file}
                         lineNumbers="visible"
@@ -163,17 +165,17 @@ export function DiffViewer({
             </ChainOfThought.Content>
           </ChainOfThought>
 
-          {/* Full diff fallback (collapsed by default) */}
-          {hunks.length > 1 && (
+          {/* Full diff fallback only when no parseable hunks */}
+          {hunks.length === 0 && diff.length > 0 && (
             <CodeDiff
               id={`${file}-full`}
-              patch={diff}
+              patch={diff.startsWith("--- ") ? diff : `--- a/${file}\n+++ b/${file}\n${diff}`}
               language={language}
-              filename={`${file} (full diff)`}
+              filename={file}
               lineNumbers="visible"
               diffStyle="unified"
               maxCollapsedLines={20}
-              defaultExpanded={false}
+              defaultExpanded={true}
             />
           )}
         </div>
