@@ -3,7 +3,9 @@ import { createHash } from 'crypto';
 import { existsSync, mkdirSync, cpSync } from 'fs';
 import { join } from 'path';
 import simpleGit from 'simple-git';
-import { loadConfig, saveConfig, getWorktreeLink, setWorktreeLink, removeWorktreeLink } from '../config.js';
+import { loadConfig, saveConfig, getWorktreeLink, setWorktreeLink, removeWorktreeLink, getFlags, addFlag, removeFlag, getWorktreeOrder, setWorktreeOrder } from '../config.js';
+import type { Flag } from '../config.js';
+import { linearClient } from '../linear/client.js';
 
 const router = Router();
 
@@ -14,6 +16,8 @@ interface Worktree {
   branch: string;
   projectId: string;
   linearIssueId?: string;
+  description?: string;
+  flags?: string[];
 }
 
 function stableId(path: string): string {
@@ -48,7 +52,8 @@ export async function discoverAllWorktrees(): Promise<Worktree[]> {
         if (wtPath && branch && wtPath !== project.path) {
           const id = stableId(wtPath);
           const link = getWorktreeLink(wtPath);
-          const wt: Worktree = { id, name: branch, path: wtPath, branch, projectId: project.id, linearIssueId: link?.linearIssueId };
+          const description = link?.description ?? link?.linearIssueTitle;
+          const wt: Worktree = { id, name: branch, path: wtPath, branch, projectId: project.id, linearIssueId: link?.linearIssueId, description, flags: link?.flags };
           worktreeRegistry.set(id, wt);
           allWorktrees.push(wt);
         }
@@ -60,6 +65,52 @@ export async function discoverAllWorktrees(): Promise<Worktree[]> {
 
   return allWorktrees;
 }
+
+// --- Flag definitions (must be before /:projectId routes) ---
+
+router.get('/meta/flags', (_req: Request, res: Response) => {
+  res.json(getFlags());
+});
+
+router.post('/meta/flags', (req: Request, res: Response) => {
+  const { name, color } = req.body as Flag;
+  if (!name?.trim()) {
+    res.status(400).json({ error: 'name is required' });
+    return;
+  }
+  addFlag({ name: name.trim(), color: color || '#6b7280' });
+  res.json({ ok: true });
+});
+
+router.delete('/meta/flags/:name', (req: Request, res: Response) => {
+  removeFlag(req.params.name);
+  res.json({ ok: true });
+});
+
+router.get('/:projectId/branches', async (req: Request, res: Response) => {
+  const { projectId } = req.params;
+  const config = loadConfig();
+  const project = config.projects.find((p) => p.id === projectId);
+  if (!project) {
+    res.status(404).json({ error: 'Project not found' });
+    return;
+  }
+
+  try {
+    const git = simpleGit(project.path);
+    await git.fetch('origin');
+    const result = await git.raw(['branch', '-r', '--format=%(refname:short)']);
+    const branches = result
+      .split('\n')
+      .map((b) => b.trim())
+      .filter(Boolean)
+      .filter((b) => !b.includes('HEAD'))
+      .map((b) => b.replace(/^origin\//, ''));
+    res.json(branches);
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
 
 router.get('/:projectId', async (req: Request, res: Response) => {
   const { projectId } = req.params;
@@ -83,11 +134,22 @@ router.get('/:projectId', async (req: Request, res: Response) => {
       if (wtPath && branch && wtPath !== project.path) {
         const id = stableId(wtPath);
         const link = getWorktreeLink(wtPath);
-        const wt: Worktree = { id, name: branch, path: wtPath, branch, projectId, linearIssueId: link?.linearIssueId };
+        const description = link?.description ?? link?.linearIssueTitle;
+        const wt: Worktree = { id, name: branch, path: wtPath, branch, projectId, linearIssueId: link?.linearIssueId, description, flags: link?.flags };
         worktreeRegistry.set(id, wt);
         worktrees.push(wt);
       }
     }
+    // Sort by persisted order
+    const order = getWorktreeOrder(projectId);
+    if (order.length > 0) {
+      worktrees.sort((a, b) => {
+        const ai = order.indexOf(a.id);
+        const bi = order.indexOf(b.id);
+        return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+      });
+    }
+
     res.json(worktrees);
   } catch (err) {
     res.status(500).json({ error: String(err) });
@@ -96,7 +158,7 @@ router.get('/:projectId', async (req: Request, res: Response) => {
 
 router.post('/:projectId', async (req: Request, res: Response) => {
   const { projectId } = req.params;
-  const { name } = req.body as { name: string };
+  const { name, baseBranch } = req.body as { name: string; baseBranch?: string };
   if (!name) {
     res.status(400).json({ error: 'Feature name is required' });
     return;
@@ -117,7 +179,23 @@ router.post('/:projectId', async (req: Request, res: Response) => {
   const wtPath = join(worktreeBase, name);
   try {
     const git = simpleGit(project.path);
-    await git.raw(['worktree', 'add', wtPath, '-b', name]);
+
+    // Always fetch latest from origin before creating worktree
+    await git.fetch('origin');
+
+    // Branch off the remote base branch (defaults to main)
+    const base = baseBranch?.trim() || 'main';
+    try {
+      await git.raw(['worktree', 'add', wtPath, '-b', name, `origin/${base}`]);
+    } catch (err) {
+      // If branch already exists, create worktree with the existing branch
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('already exists')) {
+        await git.raw(['worktree', 'add', wtPath, name]);
+      } else {
+        throw err;
+      }
+    }
 
     // Copy Claude Code config files
     const filesToCopy = ['.claude', 'CLAUDE.md', '.cursorrules'];
@@ -185,8 +263,22 @@ router.post('/:projectId/:worktreeId/link', async (req: Request, res: Response) 
     return;
   }
 
-  setWorktreeLink(wt.path, { linearIssueId: linearIssueId.trim() });
-  wt.linearIssueId = linearIssueId.trim();
+  const trimmedId = linearIssueId.trim();
+  const linkData: { linearIssueId: string; linearIssueTitle?: string } = { linearIssueId: trimmedId };
+
+  // Try to cache the Linear issue title
+  try {
+    const issue = await linearClient.getIssue(trimmedId);
+    if (issue?.title) {
+      linkData.linearIssueTitle = issue.title;
+      wt.description = issue.title;
+    }
+  } catch {
+    // Linear may not be connected; link without title
+  }
+
+  setWorktreeLink(wt.path, linkData);
+  wt.linearIssueId = trimmedId;
   res.json({ ok: true });
 });
 
@@ -201,6 +293,40 @@ router.delete('/:projectId/:worktreeId/link', async (req: Request, res: Response
 
   removeWorktreeLink(wt.path);
   delete wt.linearIssueId;
+  res.json({ ok: true });
+});
+
+// --- Worktree order ---
+
+router.get('/:projectId/order', (req: Request, res: Response) => {
+  res.json(getWorktreeOrder(req.params.projectId));
+});
+
+router.put('/:projectId/order', (req: Request, res: Response) => {
+  const { order } = req.body as { order: string[] };
+  if (!Array.isArray(order)) {
+    res.status(400).json({ error: 'order must be an array of worktree IDs' });
+    return;
+  }
+  setWorktreeOrder(req.params.projectId, order);
+  res.json({ ok: true });
+});
+
+// --- Worktree flags ---
+
+router.put('/:worktreeId/flags', (req: Request, res: Response) => {
+  const wt = worktreeRegistry.get(req.params.worktreeId);
+  if (!wt) {
+    res.status(404).json({ error: 'Worktree not found' });
+    return;
+  }
+  const { flags } = req.body as { flags: string[] };
+  if (!Array.isArray(flags)) {
+    res.status(400).json({ error: 'flags must be an array of flag names' });
+    return;
+  }
+  const existing = getWorktreeLink(wt.path) ?? {};
+  setWorktreeLink(wt.path, { ...existing, flags });
   res.json({ ok: true });
 });
 

@@ -6,8 +6,13 @@ import { NewWorktreeModal } from '@/components/NewWorktreeModal';
 import { LinearSetupModal } from '@/components/LinearSetupModal';
 import { AnthropicSetupModal } from '@/components/AnthropicSetupModal';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { ContextualToolbar } from '@/components/ContextualToolbar';
+import { PipelineProgressTracker } from '@/components/PipelineProgressTracker';
+import { PipelineConfirmDialog } from '@/components/PipelineConfirmDialog';
 import { useWorktrees } from '@/hooks/useWorktrees';
+import { useWorktreeStatuses } from '@/hooks/useWorktreeStatuses';
 import { useLinear } from '@/hooks/useLinear';
+import { useFlags } from '@/hooks/useFlags';
 import { api } from '@/api/client';
 import type { Tab, AIStatus } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -57,6 +62,8 @@ export function App() {
   const [showAISetup, setShowAISetup] = useState(false);
   const [aiStatus, setAIStatus] = useState<AIStatus>({ configured: false, connected: false });
   const [reviewRefreshKey, setReviewRefreshKey] = useState(0);
+  const [baseBranch, setBaseBranch] = useState('staging');
+  const [branches, setBranches] = useState<string[]>([]);
 
   const handleTerminalExit = useCallback(() => {
     setReviewRefreshKey((k) => k + 1);
@@ -74,10 +81,23 @@ export function App() {
     addProject,
     createWorktree,
     deleteWorktree,
+    reorderWorktrees,
+    setWorktreeFlags,
     refresh,
   } = useWorktrees();
 
+  const { flags, createFlag } = useFlags();
+
+  const { sessions: worktreeStatuses, pipelines: pipelineStatuses } = useWorktreeStatuses();
+
   const { status: linearStatus, issue, comments, loadingIssue, issueError, effectiveTicketId, setupLinear } = useLinear(selectedWorktree);
+
+  useEffect(() => {
+    if (!selectedProject) { setBranches([]); return; }
+    api.getBranches(selectedProject.id)
+      .then(setBranches)
+      .catch(() => setBranches([]));
+  }, [selectedProject]);
 
   const refreshAIStatus = useCallback(async () => {
     try {
@@ -100,6 +120,30 @@ export function App() {
     setSelectedWorktree((prev) => prev ? { ...prev, linearIssueId: undefined } : null);
   }, [selectedProject, selectedWorktree, refresh, setSelectedWorktree]);
 
+  const handleEnablePipeline = useCallback(async () => {
+    if (!selectedWorktree) return;
+    await api.enablePipeline(selectedWorktree.id);
+  }, [selectedWorktree]);
+
+  const handleDisablePipeline = useCallback(async () => {
+    if (!selectedWorktree) return;
+    await api.disablePipeline(selectedWorktree.id);
+  }, [selectedWorktree]);
+
+  const handleApprovePipeline = useCallback(async () => {
+    if (!selectedWorktree) return;
+    await api.approvePipeline(selectedWorktree.id);
+  }, [selectedWorktree]);
+
+  const handleRejectPipeline = useCallback(async () => {
+    if (!selectedWorktree) return;
+    await api.rejectPipeline(selectedWorktree.id);
+  }, [selectedWorktree]);
+
+  const currentPipelineStatus = selectedWorktree
+    ? pipelineStatuses.get(selectedWorktree.id) ?? null
+    : null;
+
   return (
     <TooltipProvider>
       <SidebarProvider>
@@ -112,17 +156,35 @@ export function App() {
           onSelectWorktree={setSelectedWorktree}
           onNewWorktree={() => setShowModal(true)}
           onDeleteWorktree={deleteWorktree}
+          onReorderWorktrees={reorderWorktrees}
+          onSetWorktreeFlags={setWorktreeFlags}
           onAddProject={() => setShowModal(true)}
           loading={loading}
           linearStatus={linearStatus}
           onLinearSetup={() => setShowLinearSetup(true)}
           aiStatus={aiStatus}
           onAISetup={() => setShowAISetup(true)}
+          statuses={worktreeStatuses}
+          pipelineStatuses={pipelineStatuses}
+          baseBranch={baseBranch}
+          onBaseBranchChange={setBaseBranch}
+          branches={branches}
+          flags={flags}
+          onCreateFlag={createFlag}
         />
 
         <AppHeader activeTab={activeTab} setActiveTab={setActiveTab} />
 
         <SidebarInset className="flex flex-col h-screen overflow-hidden pt-12">
+          <ContextualToolbar
+            worktreeId={selectedWorktree?.id ?? null}
+            pipelineStatus={currentPipelineStatus}
+            onEnablePipeline={handleEnablePipeline}
+            onDisablePipeline={handleDisablePipeline}
+            onApprovePipeline={handleApprovePipeline}
+            onRejectPipeline={handleRejectPipeline}
+            tab={activeTab}
+          />
           <div className="flex-1 min-h-0 overflow-hidden flex flex-col min-w-0">
             <ErrorBoundary>
               <div className={activeTab === 'features' ? 'flex-1 flex flex-col min-h-0' : 'hidden'}>
@@ -138,7 +200,7 @@ export function App() {
                 />
               </div>
               <div className={activeTab === 'review' ? 'flex-1 flex flex-col min-h-0' : 'hidden'}>
-                <ReviewTab selectedWorktree={selectedWorktree} aiConnected={aiStatus.connected} issue={issue} refreshKey={reviewRefreshKey} />
+                <ReviewTab selectedWorktree={selectedWorktree} aiConnected={aiStatus.connected} issue={issue} refreshKey={reviewRefreshKey} branches={branches} baseBranch={baseBranch} />
               </div>
             </ErrorBoundary>
           </div>
@@ -151,6 +213,7 @@ export function App() {
             onAddProject={addProject}
             hasProject={!!selectedProject}
             linearConnected={linearStatus.connected}
+            baseBranch={baseBranch}
           />
         )}
 
@@ -165,6 +228,19 @@ export function App() {
           <AnthropicSetupModal
             onClose={() => setShowAISetup(false)}
             onSetup={handleAISetup}
+          />
+        )}
+
+        {currentPipelineStatus && currentPipelineStatus.phase !== 'idle' && (
+          <PipelineProgressTracker status={currentPipelineStatus} />
+        )}
+
+        {currentPipelineStatus && (
+          <PipelineConfirmDialog
+            open={currentPipelineStatus.phase === 'confirming'}
+            status={currentPipelineStatus}
+            onApprove={handleApprovePipeline}
+            onReject={handleRejectPipeline}
           />
         )}
       </SidebarProvider>

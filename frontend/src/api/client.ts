@@ -1,4 +1,4 @@
-import type { Project, Worktree, DiffResult, FileDiff, LinearIssue, LinearComment, LinearStatus, AIStatus, FileAnalysis, FileDetailedAnalysis, TicketContext } from '../types/index.js';
+import type { Project, Worktree, DiffResult, FileDiff, LinearIssue, LinearComment, LinearStatus, AIStatus, FileAnalysis, FileDetailedAnalysis, TicketContext, PipelineStatus, BranchDiffResult, NarrativeAnalysis, Flag } from '../types/index.js';
 
 const BASE = '/api';
 
@@ -26,10 +26,13 @@ export const api = {
   getWorktrees: (projectId: string) =>
     request<Worktree[]>(`/worktrees/${projectId}`),
 
-  createWorktree: (projectId: string, name: string) =>
+  getBranches: (projectId: string) =>
+    request<string[]>(`/worktrees/${projectId}/branches`),
+
+  createWorktree: (projectId: string, name: string, baseBranch?: string) =>
     request<Worktree>(`/worktrees/${projectId}`, {
       method: 'POST',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, baseBranch }),
     }),
 
   deleteWorktree: (id: string) =>
@@ -92,5 +95,60 @@ export const api = {
     request<FileDetailedAnalysis>(`/diff/${worktreeId}/${encodeURIComponent(file)}/analyze`, {
       method: 'POST',
       body: JSON.stringify({ ticketContext }),
+    }),
+
+  getBranchDiff: (worktreeId: string, baseBranch: string) =>
+    request<BranchDiffResult>(`/diff/${worktreeId}?scope=branch&base=${encodeURIComponent(baseBranch)}`),
+
+  analyzeNarrative: (worktreeId: string, baseBranch: string, ticketContext?: TicketContext, fingerprint?: string) =>
+    request<NarrativeAnalysis>(`/diff/${worktreeId}/narrative`, {
+      method: 'POST',
+      body: JSON.stringify({ baseBranch, ticketContext, fingerprint }),
+    }),
+
+  enablePipeline: (worktreeId: string) =>
+    request<{ status: PipelineStatus }>(`/pipeline/${worktreeId}/enable`, { method: 'POST' }),
+
+  disablePipeline: (worktreeId: string) =>
+    request<{ ok: boolean }>(`/pipeline/${worktreeId}/disable`, { method: 'POST' }),
+
+  approvePipeline: (worktreeId: string) =>
+    request<{ status: PipelineStatus }>(`/pipeline/${worktreeId}/approve`, { method: 'POST' }),
+
+  rejectPipeline: (worktreeId: string) =>
+    request<{ ok: boolean }>(`/pipeline/${worktreeId}/reject`, { method: 'POST' }),
+
+  sendTerminalCommand: (worktreeId: string, text: string) =>
+    request<{ ok: boolean }>(`/terminal/${worktreeId}/write`, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
+
+  // Worktree order
+  setWorktreeOrder: (projectId: string, order: string[]) =>
+    request<{ ok: boolean }>(`/worktrees/${projectId}/order`, {
+      method: 'PUT',
+      body: JSON.stringify({ order }),
+    }),
+
+  // Worktree flags
+  setWorktreeFlags: (worktreeId: string, flags: string[]) =>
+    request<{ ok: boolean }>(`/worktrees/${worktreeId}/flags`, {
+      method: 'PUT',
+      body: JSON.stringify({ flags }),
+    }),
+
+  // Flag definitions
+  getFlags: () => request<Flag[]>('/worktrees/meta/flags'),
+
+  createFlag: (name: string, color: string) =>
+    request<{ ok: boolean }>('/worktrees/meta/flags', {
+      method: 'POST',
+      body: JSON.stringify({ name, color }),
+    }),
+
+  deleteFlag: (name: string) =>
+    request<{ ok: boolean }>(`/worktrees/meta/flags/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
     }),
 };

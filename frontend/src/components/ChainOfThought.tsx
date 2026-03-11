@@ -137,6 +137,7 @@ function ChainOfThoughtContentWrapper({
 /* ── Step ─────────────────────────────────────────────────────── */
 
 interface ChainOfThoughtStepProps {
+  id?: string;
   icon?: typeof Circle;
   label: string;
   description?: string;
@@ -147,6 +148,7 @@ interface ChainOfThoughtStepProps {
 }
 
 function ChainOfThoughtStep({
+  id: stepId,
   icon,
   label,
   description,
@@ -167,7 +169,7 @@ function ChainOfThoughtStep({
   const hasContent = !!children;
 
   return (
-    <div className={cn("relative pl-6", className)}>
+    <div id={stepId} className={cn("relative pl-6", className)}>
       {/* Vertical connector line */}
       <div className="absolute left-[7px] top-0 bottom-0 w-px bg-border" />
 

@@ -3,22 +3,115 @@ import type { Server } from 'http';
 import { userInfo } from 'os';
 import * as pty from 'node-pty';
 import { WebSocketServer, WebSocket } from 'ws';
+import Anthropic from '@anthropic-ai/sdk';
 import { getWorktree } from '../routes/worktrees.js';
+import { loadConfig, getWorktreeLink, setWorktreeLink } from '../config.js';
+import { triggerExitAnalysis } from '../analysis-runner.js';
 
 export interface WorktreeInfo {
   id: string;
   path: string;
 }
 
+export type ClaudeActivityState = 'booting' | 'active' | 'idle' | 'exited' | 'error';
+
+export interface SessionStatus {
+  state: ClaudeActivityState;
+  lastActivity: number;
+  stateStartedAt: number;
+  description?: string;
+}
+
 interface PtySession {
   term: pty.IPty;
   clients: Set<WebSocket>;
+  status: SessionStatus;
+  outputBuffer: string;
+  descriptionGenerated: boolean;
+  worktreePath: string;
 }
 
 const sessions: Map<string, PtySession> = new Map();
 const DEFAULT_TERMINAL_COLS = 120;
 const DEFAULT_TERMINAL_ROWS = 30;
 const CLAUDE_BOOT_DELAY_MS = 500;
+const IDLE_THRESHOLD_MS = 3000;
+const DESCRIPTION_BUFFER_THRESHOLD = 2000;
+const DESCRIPTION_BUFFER_MAX = 3000;
+const BOOT_SETTLE_MS = 8000; // ignore output for first 8s (shell + Claude boot noise)
+
+function stripAnsi(str: string): string {
+  return str
+    // Strip all ESC sequences: CSI, OSC, SS2/SS3, DCS, charset, private modes, etc.
+    .replace(/\x1B\[[0-9;?]*[a-zA-Z@`]/g, '')   // CSI sequences
+    .replace(/\x1B\][^\x07]*(?:\x07|\x1B\\)/g, '') // OSC sequences
+    .replace(/\x1BP[^\x1B]*\x1B\\/g, '')          // DCS sequences
+    .replace(/\x1B[()#][A-Z0-9]/g, '')            // Charset selection
+    .replace(/\x1B[NOcM78=>]/g, '')                // SS2, SS3, RIS, etc.
+    .replace(/\x1B./g, '')                         // Catch-all remaining ESC+char
+    .replace(/[\x00-\x1F\x7F]/g, ' ')             // Control chars to spaces
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isOAuthToken(key: string): boolean {
+  return key.startsWith('sk-ant-oat');
+}
+
+function createAnthropicClient(key: string): Anthropic {
+  if (isOAuthToken(key)) {
+    return new Anthropic({
+      authToken: key,
+      apiKey: null,
+      defaultHeaders: { 'anthropic-beta': 'oauth-2025-04-20' },
+    });
+  }
+  return new Anthropic({ apiKey: key });
+}
+
+async function generateDescription(session: PtySession, worktreeId: string): Promise<void> {
+  session.descriptionGenerated = true;
+
+  const config = loadConfig();
+  if (!config.anthropicApiKey) return;
+
+  try {
+    const client = createAnthropicClient(config.anthropicApiKey);
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 60,
+      messages: [{
+        role: 'user',
+        content: `Summarize in one short phrase (max 8 words) what task is being worked on in this terminal conversation. Return ONLY the phrase, nothing else:\n\n${session.outputBuffer}`,
+      }],
+    });
+
+    const text = response.content
+      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+      .map((b) => b.text)
+      .join('')
+      .trim();
+
+    if (text) {
+      session.status.description = text;
+      const existingLink = getWorktreeLink(session.worktreePath) ?? {};
+      setWorktreeLink(session.worktreePath, { ...existingLink, description: text });
+    }
+  } catch (err) {
+    console.error(`Failed to generate description for worktree ${worktreeId}:`, err);
+  }
+}
+
+// Global idle-detection timer
+setInterval(() => {
+  const now = Date.now();
+  for (const [, session] of sessions) {
+    if (session.status.state === 'active' && now - session.status.lastActivity > IDLE_THRESHOLD_MS) {
+      session.status.state = 'idle';
+      session.status.stateStartedAt = now;
+    }
+  }
+}, 1000);
 
 function resolveShell(): string {
   const candidateShells = [
@@ -88,14 +181,60 @@ function createSession(worktreeId: string, cwd: string): PtySession {
     env: getTerminalEnv(),
   });
 
-  const session: PtySession = { term, clients: new Set() };
+  const now = Date.now();
+
+  // Load persisted description if available
+  const existingLink = getWorktreeLink(cwd);
+  const persistedDescription = existingLink?.description;
+
+  const session: PtySession = {
+    term,
+    clients: new Set(),
+    status: {
+      state: 'booting',
+      lastActivity: now,
+      stateStartedAt: now,
+      description: persistedDescription,
+    },
+    outputBuffer: '',
+    descriptionGenerated: !!persistedDescription,
+    worktreePath: cwd,
+  };
   sessions.set(worktreeId, session);
+
+  const sessionCreatedAt = now;
 
   term.onData((data: string) => {
     broadcastToClients(session, data);
+
+    // Status tracking
+    const stripped = stripAnsi(data);
+    if (stripped.length > 0) {
+      const now = Date.now();
+      session.status.lastActivity = now;
+
+      if (session.status.state !== 'active') {
+        session.status.state = 'active';
+        session.status.stateStartedAt = now;
+      }
+
+      // Skip boot noise (shell prompt, Claude startup banner) before accumulating
+      const pastBootPhase = now - sessionCreatedAt > BOOT_SETTLE_MS;
+      if (pastBootPhase && session.outputBuffer.length < DESCRIPTION_BUFFER_MAX) {
+        session.outputBuffer += stripped + ' ';
+      }
+
+      // Trigger description generation once we have enough post-boot context
+      if (pastBootPhase && !session.descriptionGenerated && session.outputBuffer.length >= DESCRIPTION_BUFFER_THRESHOLD) {
+        generateDescription(session, worktreeId);
+      }
+    }
   });
 
   term.onExit(() => {
+    session.status.state = 'exited';
+    session.status.stateStartedAt = Date.now();
+    triggerExitAnalysis(worktreeId, session.worktreePath);
     sessions.delete(worktreeId);
     for (const client of session.clients) {
       client.close();
@@ -194,4 +333,19 @@ export function preInitializeSessions(worktrees: WorktreeInfo[]): void {
       console.error(`Failed to pre-initialize terminal for ${wt.id}:`, err);
     }
   }
+}
+
+export function getAllSessionStatuses(): Record<string, SessionStatus> {
+  const result: Record<string, SessionStatus> = {};
+  for (const [id, session] of sessions) {
+    result[id] = { ...session.status };
+  }
+  return result;
+}
+
+export function writeToSession(worktreeId: string, text: string): boolean {
+  const session = sessions.get(worktreeId);
+  if (!session) return false;
+  session.term.write(text);
+  return true;
 }

@@ -15,7 +15,9 @@ import {
 } from "@pierre/diffs/react";
 import { parseDiffFromFile, RegisteredCustomThemes } from "@pierre/diffs";
 import type { FileDiffMetadata, ThemesType } from "@pierre/diffs";
-import { Copy, Check, ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import { CopyIcon } from "@/components/ui/copy";
+import { CheckIcon as AnimatedCheckIcon } from "@/components/ui/check";
 import type { CodeDiffProps } from "./schema";
 import { useCopyToClipboard } from "../shared/use-copy-to-clipboard";
 import { Button, cn, Collapsible, CollapsibleTrigger } from "./_adapter";
@@ -342,9 +344,9 @@ function CodeDiffHeader({ className }: CodeDiffSectionProps) {
         aria-label={isCopied ? "Copied" : "Copy code"}
       >
         {isCopied ? (
-          <Check className="h-4 w-4 text-green-700 dark:text-green-400" />
+          <AnimatedCheckIcon size={16} className="text-green-700 dark:text-green-400" />
         ) : (
-          <Copy className="text-muted-foreground h-4 w-4" />
+          <CopyIcon size={16} className="text-muted-foreground" />
         )}
       </Button>
     </div>
