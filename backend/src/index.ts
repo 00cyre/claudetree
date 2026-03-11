@@ -8,6 +8,8 @@ import commitRouter from './routes/commit.js';
 import linearRouter from './routes/linear.js';
 import aiRouter from './routes/ai.js';
 import statusRouter from './routes/status.js';
+import pipelineRouter from './routes/pipeline.js';
+import terminalRouter from './routes/terminal.js';
 import { setupTerminalWebSocket, preInitializeSessions } from './terminal/pty.js';
 import { discoverAllWorktrees } from './routes/worktrees.js';
 import { linearClient } from './linear/client.js';
@@ -28,6 +30,8 @@ app.use('/api/commit', commitRouter);
 app.use('/api/linear', linearRouter);
 app.use('/api/ai', aiRouter);
 app.use('/api/status', statusRouter);
+app.use('/api/pipeline', pipelineRouter);
+app.use('/api/terminal', terminalRouter);
 
 const server = createServer(app);
 

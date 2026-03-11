@@ -48,9 +48,9 @@ export function useWorktrees() {
     setSelectedProject(project);
   };
 
-  const createWorktree = async (name: string, linearIssueId?: string) => {
+  const createWorktree = async (name: string, linearIssueId?: string, baseBranch?: string) => {
     if (!selectedProject) return;
-    const wt = await api.createWorktree(selectedProject.id, name);
+    const wt = await api.createWorktree(selectedProject.id, name, baseBranch);
     if (linearIssueId) {
       await api.linkWorktree(selectedProject.id, wt.id, linearIssueId);
       wt.linearIssueId = linearIssueId;
@@ -67,6 +67,18 @@ export function useWorktrees() {
     }
   };
 
+  const reorderWorktrees = useCallback(async (reordered: Worktree[]) => {
+    setWorktrees(reordered);
+    if (selectedProject) {
+      await api.setWorktreeOrder(selectedProject.id, reordered.map((w) => w.id));
+    }
+  }, [selectedProject]);
+
+  const setWorktreeFlags = useCallback(async (worktreeId: string, flags: string[]) => {
+    await api.setWorktreeFlags(worktreeId, flags);
+    setWorktrees((prev) => prev.map((w) => w.id === worktreeId ? { ...w, flags } : w));
+  }, []);
+
   return {
     projects,
     selectedProject,
@@ -78,6 +90,8 @@ export function useWorktrees() {
     addProject,
     createWorktree,
     deleteWorktree,
+    reorderWorktrees,
+    setWorktreeFlags,
     refresh: loadWorktrees,
   };
 }

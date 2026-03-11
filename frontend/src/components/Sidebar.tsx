@@ -1,10 +1,13 @@
-import type { Project, Worktree, LinearStatus, AIStatus, SessionStatus, ClaudeActivityState } from '@/types';
+import { useState, useRef, useCallback } from 'react';
+import type { Project, Worktree, Flag, LinearStatus, AIStatus, SessionStatus, ClaudeActivityState, PipelineStatus } from '@/types';
 import { extractTicketIdFromBranch } from '@/utils/linear';
-import { X, Link2, Folder, CheckCircle2, AlertCircle, Circle } from 'lucide-react';
+import { X, Link2, Folder, CheckCircle2, AlertCircle, Circle, GripVertical, Tag, Plus } from 'lucide-react';
 import { GitBranchIcon } from '@/components/ui/git-branch';
 import { PlusIcon } from '@/components/ui/plus';
 import { BotIcon } from '@/components/ui/bot';
 import { Spinner } from '@/components/ui/spinner';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import {
   Sidebar as SidebarRoot,
   SidebarContent,
@@ -28,6 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Popover } from 'radix-ui';
 import { cn } from '@/lib/utils';
 
 function formatElapsed(ms: number): string {
@@ -47,12 +51,6 @@ const STATUS_DOT_STYLES: Record<ClaudeActivityState, string> = {
   error: 'bg-red-400',
 };
 
-function StatusDot({ state }: { state: ClaudeActivityState }) {
-  return (
-    <span className={cn('size-2 rounded-full shrink-0', STATUS_DOT_STYLES[state])} />
-  );
-}
-
 const STATUS_LABEL: Record<ClaudeActivityState, { label: string; className: string }> = {
   booting: { label: 'Starting...', className: 'text-muted-foreground' },
   active: { label: 'Working', className: 'text-amber-600 dark:text-amber-400' },
@@ -61,7 +59,66 @@ const STATUS_LABEL: Record<ClaudeActivityState, { label: string; className: stri
   error: { label: 'Error', className: 'text-red-600 dark:text-red-400' },
 };
 
-function ActivityLine({ status }: { status: SessionStatus }) {
+const PIPELINE_LABEL: Record<string, { label: string; className: string }> = {
+  pushing: { label: 'Pushing...', className: 'text-amber-600 dark:text-amber-400' },
+  waiting: { label: 'CI running...', className: 'text-amber-600 dark:text-amber-400' },
+  passing: { label: 'Pipeline passed', className: 'text-emerald-600 dark:text-emerald-400' },
+  failing: { label: 'Pipeline failed', className: 'text-red-600 dark:text-red-400' },
+  fixing: { label: 'Fixing pipeline...', className: 'text-amber-600 dark:text-amber-400' },
+  confirming: { label: 'Awaiting approval', className: 'text-amber-600 dark:text-amber-400' },
+  error: { label: 'Pipeline error', className: 'text-red-600 dark:text-red-400' },
+};
+
+function pipelineDotStyle(phase: string): string {
+  switch (phase) {
+    case 'pushing':
+    case 'waiting':
+    case 'fixing':
+      return 'bg-amber-400 animate-pulse';
+    case 'passing':
+      return 'bg-emerald-400';
+    case 'failing':
+    case 'error':
+      return 'bg-red-400';
+    case 'confirming':
+      return 'bg-amber-400';
+    default:
+      return '';
+  }
+}
+
+function ActivityLine({ status, pipelineStatus }: { status: SessionStatus; pipelineStatus?: PipelineStatus }) {
+  if (pipelineStatus && pipelineStatus.phase !== 'idle') {
+    const elapsed = formatElapsed(Date.now() - pipelineStatus.since);
+    const info = PIPELINE_LABEL[pipelineStatus.phase] ?? { label: pipelineStatus.phase, className: 'text-muted-foreground' };
+
+    const icon = (() => {
+      switch (pipelineStatus.phase) {
+        case 'pushing':
+        case 'waiting':
+        case 'fixing':
+          return <Spinner className="size-3" />;
+        case 'passing':
+          return <CheckCircle2 className="size-3 shrink-0" />;
+        case 'failing':
+        case 'error':
+          return <AlertCircle className="size-3 shrink-0" />;
+        case 'confirming':
+          return <Spinner className="size-3" />;
+        default:
+          return <Circle className="size-3 shrink-0" />;
+      }
+    })();
+
+    return (
+      <span className={cn('flex items-center gap-1', info.className)}>
+        {icon}
+        <span className="truncate">{info.label}</span>
+        <span className="shrink-0 text-muted-foreground">({elapsed})</span>
+      </span>
+    );
+  }
+
   const elapsed = formatElapsed(Date.now() - status.stateStartedAt);
   const { label, className } = STATUS_LABEL[status.state];
 
@@ -90,64 +147,232 @@ function ActivityLine({ status }: { status: SessionStatus }) {
   );
 }
 
+// --- Flag Picker Popover ---
+
+const FLAG_COLORS = [
+  '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899', '#6b7280',
+];
+
+function FlagPicker({
+  worktreeFlags,
+  allFlags,
+  onToggleFlag,
+  onCreateFlag,
+}: {
+  worktreeFlags: string[];
+  allFlags: Flag[];
+  onToggleFlag: (name: string) => void;
+  onCreateFlag: (name: string, color: string) => void;
+}) {
+  const [newName, setNewName] = useState('');
+  const [newColor, setNewColor] = useState(FLAG_COLORS[0]);
+
+  const handleCreate = () => {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    onCreateFlag(trimmed, newColor);
+    onToggleFlag(trimmed);
+    setNewName('');
+  };
+
+  return (
+    <div className="w-48 p-2 space-y-2">
+      {allFlags.length > 0 && (
+        <div className="space-y-1">
+          {allFlags.map((f) => (
+            <button
+              key={f.name}
+              className={cn(
+                'flex items-center gap-2 w-full px-2 py-1 rounded text-xs hover:bg-muted transition-colors text-left',
+                worktreeFlags.includes(f.name) && 'bg-muted',
+              )}
+              onClick={() => onToggleFlag(f.name)}
+            >
+              <span className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: f.color }} />
+              <span className="truncate">{f.name}</span>
+              {worktreeFlags.includes(f.name) && (
+                <CheckCircle2 className="size-3 ml-auto shrink-0 text-primary" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="border-t border-border pt-2 space-y-1.5">
+        <div className="flex items-center gap-1.5">
+          <Input
+            className="h-6 text-xs flex-1"
+            placeholder="New flag..."
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }}
+          />
+          <button
+            className="size-6 shrink-0 flex items-center justify-center rounded hover:bg-muted text-muted-foreground"
+            onClick={handleCreate}
+            title="Add flag"
+          >
+            <Plus className="size-3" />
+          </button>
+        </div>
+        <div className="flex gap-1 flex-wrap">
+          {FLAG_COLORS.map((c) => (
+            <button
+              key={c}
+              className={cn(
+                'size-4 rounded-full border-2 transition-colors',
+                newColor === c ? 'border-foreground' : 'border-transparent',
+              )}
+              style={{ backgroundColor: c }}
+              onClick={() => setNewColor(c)}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Worktree Item ---
+
 function WorktreeItem({
   wt,
   isActive,
   status,
+  pipelineStatus,
+  allFlags,
   onSelect,
   onDelete,
+  onSetFlags,
+  onCreateFlag,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
 }: {
   wt: Worktree;
   isActive: boolean;
   status?: SessionStatus;
+  pipelineStatus?: PipelineStatus;
+  allFlags: Flag[];
   onSelect: () => void;
   onDelete: () => void;
+  onSetFlags: (flags: string[]) => void;
+  onCreateFlag: (name: string, color: string) => void;
+  onDragStart: (e: React.DragEvent) => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDrop: (e: React.DragEvent) => void;
+  onDragEnd: () => void;
 }) {
   const ticketId = wt.linearIssueId ?? extractTicketIdFromBranch(wt.name);
   const description = status?.description ?? wt.description;
+  const wtFlags = wt.flags ?? [];
+  const flagDefs = allFlags.filter((f) => wtFlags.includes(f.name));
+
+  const toggleFlag = (name: string) => {
+    const next = wtFlags.includes(name)
+      ? wtFlags.filter((f) => f !== name)
+      : [...wtFlags, name];
+    onSetFlags(next);
+  };
 
   return (
-    <SidebarMenuItem>
+    <SidebarMenuItem
+      draggable
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+    >
       <SidebarMenuButton
         isActive={isActive}
         tooltip={wt.name}
         onClick={onSelect}
-        className="h-auto py-1.5"
+        className="h-auto py-1.5 items-start"
       >
-        <div className="flex items-start gap-1.5 min-w-0 w-full">
-          {status && <StatusDot state={status.state} />}
-          <GitBranchIcon size={16} className="shrink-0 mt-0.5" />
-          <div className="flex flex-col min-w-0 gap-0.5">
-            <span className="truncate text-sm leading-tight">{wt.name}</span>
-            {ticketId && (
-              <span className="text-[10px] text-muted-foreground truncate leading-tight" title={ticketId}>
-                {ticketId}
-              </span>
-            )}
-            {description && (
-              <span className="text-[10px] text-muted-foreground/80 truncate leading-tight italic" title={description}>
-                {description}
-              </span>
-            )}
+        <div className="flex flex-col items-center gap-1 shrink-0 mt-0.5">
+          <GitBranchIcon size={16} />
+          <GripVertical className="size-3 text-muted-foreground/50 cursor-grab" />
+        </div>
+        <div className="flex flex-col min-w-0 gap-0.5">
+          <div className="flex items-center gap-1.5 min-w-0">
             {status && (
-              <div className="text-[10px] leading-tight">
-                <ActivityLine status={status} />
-              </div>
+              <span className={cn(
+                'size-2 rounded-full shrink-0',
+                pipelineStatus && pipelineStatus.phase !== 'idle'
+                  ? pipelineDotStyle(pipelineStatus.phase)
+                  : STATUS_DOT_STYLES[status.state],
+              )} />
             )}
+            <span className="truncate text-sm leading-tight">{wt.name}</span>
           </div>
+          {ticketId && (
+            <span className="text-[10px] text-muted-foreground truncate leading-tight" title={ticketId}>
+              {ticketId}
+            </span>
+          )}
+          {description && (
+            <span className="text-[10px] text-muted-foreground/80 truncate leading-tight italic" title={description}>
+              {description}
+            </span>
+          )}
+          {flagDefs.length > 0 && (
+            <div className="flex gap-1 flex-wrap mt-0.5">
+              {flagDefs.map((f) => (
+                <Badge key={f.name} variant="outline" className="h-4 text-[9px] px-1.5 gap-1">
+                  <span className="size-1.5 rounded-full shrink-0" style={{ backgroundColor: f.color }} />
+                  {f.name}
+                </Badge>
+              ))}
+            </div>
+          )}
+          {status && (
+            <div className="text-[10px] leading-tight">
+              <ActivityLine status={status} pipelineStatus={pipelineStatus} />
+            </div>
+          )}
         </div>
       </SidebarMenuButton>
-      <SidebarMenuAction
-        showOnHover
-        className="text-muted-foreground hover:text-destructive"
-        onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        title="Remove worktree"
-      >
-        <X className="size-3" />
-      </SidebarMenuAction>
+      <div className="absolute right-1 top-1 flex items-center gap-0.5 opacity-0 group-hover/menu-item:opacity-100 transition-opacity">
+        <Popover.Root>
+          <Popover.Trigger asChild>
+            <button
+              className="size-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+              onClick={(e) => e.stopPropagation()}
+              title="Set flags"
+            >
+              <Tag className="size-3" />
+            </button>
+          </Popover.Trigger>
+          <Popover.Portal>
+            <Popover.Content
+              side="right"
+              align="start"
+              sideOffset={4}
+              className="z-50 rounded-lg border border-border bg-popover text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <FlagPicker
+                worktreeFlags={wtFlags}
+                allFlags={allFlags}
+                onToggleFlag={toggleFlag}
+                onCreateFlag={onCreateFlag}
+              />
+            </Popover.Content>
+          </Popover.Portal>
+        </Popover.Root>
+        <button
+          className="size-5 flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-muted"
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          title="Remove worktree"
+        >
+          <X className="size-3" />
+        </button>
+      </div>
     </SidebarMenuItem>
   );
 }
+
+// --- Main Sidebar ---
 
 export interface SidebarProps {
   projects: Project[];
@@ -158,6 +383,8 @@ export interface SidebarProps {
   onSelectWorktree: (w: Worktree) => void;
   onNewWorktree: () => void;
   onDeleteWorktree: (id: string) => void;
+  onReorderWorktrees: (worktrees: Worktree[]) => void;
+  onSetWorktreeFlags: (worktreeId: string, flags: string[]) => void;
   onAddProject?: () => void;
   loading: boolean;
   linearStatus: LinearStatus;
@@ -165,6 +392,12 @@ export interface SidebarProps {
   aiStatus: AIStatus;
   onAISetup: () => void;
   statuses: Map<string, SessionStatus>;
+  pipelineStatuses: Map<string, PipelineStatus>;
+  baseBranch: string;
+  onBaseBranchChange: (branch: string) => void;
+  branches: string[];
+  flags: Flag[];
+  onCreateFlag: (name: string, color: string) => void;
 }
 
 export function AppSidebar({
@@ -176,6 +409,8 @@ export function AppSidebar({
   onSelectWorktree,
   onNewWorktree,
   onDeleteWorktree,
+  onReorderWorktrees,
+  onSetWorktreeFlags,
   onAddProject,
   loading,
   linearStatus,
@@ -183,9 +418,47 @@ export function AppSidebar({
   aiStatus,
   onAISetup,
   statuses,
+  pipelineStatuses,
+  baseBranch,
+  onBaseBranchChange,
+  branches,
+  flags,
+  onCreateFlag,
 }: SidebarProps) {
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
+  const dragItem = useRef<number | null>(null);
+  const dragOverItem = useRef<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+
+  const handleDragStart = useCallback((idx: number) => (e: React.DragEvent) => {
+    dragItem.current = idx;
+    e.dataTransfer.effectAllowed = 'move';
+  }, []);
+
+  const handleDragOver = useCallback((idx: number) => (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    dragOverItem.current = idx;
+    setDragOverIdx(idx);
+  }, []);
+
+  const handleDrop = useCallback(() => {
+    if (dragItem.current === null || dragOverItem.current === null || dragItem.current === dragOverItem.current) return;
+    const reordered = [...worktrees];
+    const [moved] = reordered.splice(dragItem.current, 1);
+    reordered.splice(dragOverItem.current, 0, moved);
+    onReorderWorktrees(reordered);
+    dragItem.current = null;
+    dragOverItem.current = null;
+    setDragOverIdx(null);
+  }, [worktrees, onReorderWorktrees]);
+
+  const handleDragEnd = useCallback(() => {
+    dragItem.current = null;
+    dragOverItem.current = null;
+    setDragOverIdx(null);
+  }, []);
 
   return (
     <SidebarRoot side="left" collapsible="icon" variant="floating">
@@ -195,32 +468,47 @@ export function AppSidebar({
             <Folder className="size-4 text-muted-foreground" />
           </div>
         ) : (
-          <div className="flex items-center gap-1">
-            <Select
-              value={selectedProject?.id ?? ''}
-              onValueChange={(v) => {
-                const p = projects.find((p) => p.id === v);
-                if (p) onSelectProject(p);
-              }}
-            >
-              <SelectTrigger className="flex-1 h-8">
-                <SelectValue placeholder="No projects" />
-              </SelectTrigger>
-              <SelectContent>
-                {projects.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {onAddProject && (
-              <button
-                onClick={onAddProject}
-                className="size-8 shrink-0 flex items-center justify-center rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                title="Add project"
+          <div className="space-y-2">
+            <div className="flex items-center gap-1">
+              <Select
+                value={selectedProject?.id ?? ''}
+                onValueChange={(v) => {
+                  const p = projects.find((p) => p.id === v);
+                  if (p) onSelectProject(p);
+                }}
               >
-                <PlusIcon size={16} />
-              </button>
-            )}
+                <SelectTrigger className="flex-1 h-8">
+                  <SelectValue placeholder="No projects" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {onAddProject && (
+                <button
+                  onClick={onAddProject}
+                  className="size-8 shrink-0 flex items-center justify-center rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                  title="Add project"
+                >
+                  <PlusIcon size={16} />
+                </button>
+              )}
+            </div>
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-muted-foreground px-0.5">Base branch</label>
+              <Select value={baseBranch} onValueChange={onBaseBranchChange}>
+                <SelectTrigger className="h-7 text-xs">
+                  <SelectValue placeholder="Select branch" />
+                </SelectTrigger>
+                <SelectContent>
+                  {branches.map((b) => (
+                    <SelectItem key={b} value={b}>{b}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         )}
       </SidebarHeader>
@@ -238,15 +526,30 @@ export function AppSidebar({
               <div className="px-2 py-2 text-sm text-muted-foreground">No worktrees</div>
             ) : (
               <SidebarMenu className="gap-1.5">
-                {worktrees.map((wt) => (
-                  <WorktreeItem
+                {worktrees.map((wt, idx) => (
+                  <div
                     key={wt.id}
-                    wt={wt}
-                    isActive={selectedWorktree?.id === wt.id}
-                    status={statuses.get(wt.id)}
-                    onSelect={() => onSelectWorktree(wt)}
-                    onDelete={() => onDeleteWorktree(wt.id)}
-                  />
+                    className={cn(
+                      'transition-all',
+                      dragOverIdx === idx && dragItem.current !== idx && 'border-t-2 border-primary',
+                    )}
+                  >
+                    <WorktreeItem
+                      wt={wt}
+                      isActive={selectedWorktree?.id === wt.id}
+                      status={statuses.get(wt.id)}
+                      pipelineStatus={pipelineStatuses.get(wt.id)}
+                      allFlags={flags}
+                      onSelect={() => onSelectWorktree(wt)}
+                      onDelete={() => onDeleteWorktree(wt.id)}
+                      onSetFlags={(f) => onSetWorktreeFlags(wt.id, f)}
+                      onCreateFlag={onCreateFlag}
+                      onDragStart={handleDragStart(idx)}
+                      onDragOver={handleDragOver(idx)}
+                      onDrop={handleDrop}
+                      onDragEnd={handleDragEnd}
+                    />
+                  </div>
                 ))}
               </SidebarMenu>
             )}

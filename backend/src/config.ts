@@ -31,6 +31,12 @@ export interface WorktreeLink {
   linearIssueId?: string;
   description?: string;
   linearIssueTitle?: string;
+  flags?: string[];
+}
+
+export interface Flag {
+  name: string;
+  color: string;
 }
 
 export interface AppConfig {
@@ -38,6 +44,8 @@ export interface AppConfig {
   linearApiKey?: string;
   anthropicApiKey?: string;
   worktreeLinks?: Record<string, WorktreeLink>;
+  flags?: Flag[];
+  worktreeOrder?: Record<string, string[]>;
 }
 
 interface SharedConfig {
@@ -50,6 +58,8 @@ interface InstanceConfig {
   linearApiKey?: string;
   anthropicApiKey?: string;
   worktreeLinks?: Record<string, WorktreeLink>;
+  flags?: Flag[];
+  worktreeOrder?: Record<string, string[]>;
 }
 
 function ensureDir(dir: string): void {
@@ -114,6 +124,8 @@ export function loadConfig(): AppConfig {
     linearApiKey: instance.linearApiKey || shared.linearApiKey,
     anthropicApiKey: instance.anthropicApiKey || shared.anthropicApiKey,
     worktreeLinks: instance.worktreeLinks,
+    flags: instance.flags,
+    worktreeOrder: instance.worktreeOrder,
   };
 }
 
@@ -133,6 +145,8 @@ export function saveConfig(config: AppConfig): void {
   const instance: InstanceConfig = {
     projects: config.projects,
     worktreeLinks: config.worktreeLinks,
+    flags: config.flags,
+    worktreeOrder: config.worktreeOrder,
   };
   // Preserve instance-level API key overrides if set
   const prev = readJson<InstanceConfig>(INSTANCE_FILE);
@@ -162,4 +176,36 @@ export function removeWorktreeLink(worktreePath: string): void {
     delete config.worktreeLinks[worktreePath];
     saveConfig(config);
   }
+}
+
+export function getFlags(): Flag[] {
+  return loadConfig().flags ?? [];
+}
+
+export function addFlag(flag: Flag): void {
+  const config = loadConfig();
+  if (!config.flags) config.flags = [];
+  if (!config.flags.some((f) => f.name === flag.name)) {
+    config.flags.push(flag);
+    saveConfig(config);
+  }
+}
+
+export function removeFlag(name: string): void {
+  const config = loadConfig();
+  if (config.flags) {
+    config.flags = config.flags.filter((f) => f.name !== name);
+    saveConfig(config);
+  }
+}
+
+export function getWorktreeOrder(projectId: string): string[] {
+  return loadConfig().worktreeOrder?.[projectId] ?? [];
+}
+
+export function setWorktreeOrder(projectId: string, order: string[]): void {
+  const config = loadConfig();
+  if (!config.worktreeOrder) config.worktreeOrder = {};
+  config.worktreeOrder[projectId] = order;
+  saveConfig(config);
 }

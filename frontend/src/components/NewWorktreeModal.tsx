@@ -12,10 +12,11 @@ import { Label } from '@/components/ui/label';
 
 interface NewWorktreeModalProps {
   onClose: () => void;
-  onCreate: (name: string, linearIssueId?: string) => Promise<void>;
+  onCreate: (name: string, linearIssueId?: string, baseBranch?: string) => Promise<void>;
   onAddProject: (path: string) => Promise<void>;
   hasProject: boolean;
   linearConnected: boolean;
+  baseBranch?: string;
 }
 
 function extractIssueId(input: string): string {
@@ -26,7 +27,7 @@ function extractIssueId(input: string): string {
   return trimmed;
 }
 
-export function NewWorktreeModal({ onClose, onCreate, onAddProject, hasProject, linearConnected }: NewWorktreeModalProps) {
+export function NewWorktreeModal({ onClose, onCreate, onAddProject, hasProject, linearConnected, baseBranch }: NewWorktreeModalProps) {
   const [name, setName] = useState('');
   const [linearIssueId, setLinearIssueId] = useState('');
   const [projectPath, setProjectPath] = useState('');
@@ -39,7 +40,7 @@ export function NewWorktreeModal({ onClose, onCreate, onAddProject, hasProject, 
     setError('');
     try {
       const issueId = linearIssueId.trim() ? extractIssueId(linearIssueId) : undefined;
-      await onCreate(name.trim(), issueId);
+      await onCreate(name.trim(), issueId, baseBranch);
       onClose();
     } catch (err) {
       setError(String(err));

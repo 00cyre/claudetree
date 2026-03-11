@@ -13,6 +13,12 @@ export interface Worktree {
   projectId: string;
   linearIssueId?: string;
   description?: string;
+  flags?: string[];
+}
+
+export interface Flag {
+  name: string;
+  color: string;
 }
 
 export type ClaudeActivityState = 'booting' | 'active' | 'idle' | 'exited' | 'error';
@@ -93,6 +99,7 @@ export interface FileAnalysis {
   sortOrder: string[];
   explanations: Record<string, string>;
   summary: string;
+  fileGroups?: Record<string, string[]>;
 }
 
 export interface HunkExplanation {
@@ -113,4 +120,67 @@ export interface TicketContext {
   description?: string;
 }
 
+// Narrative analysis types for unified review view
+export interface NarrativeStep {
+  id: string;
+  title: string;
+  description: string;
+  files: {
+    file: string;
+    diff: string;
+    hunkIndices?: number[];
+  }[];
+  connections?: string[];
+}
+
+export interface NarrativePhase {
+  title: string;
+  labels: string[];
+  description: string;
+  steps: NarrativeStep[];
+}
+
+export interface TicketCorrelation {
+  ticketId: string;
+  ticketTitle: string;
+  correlation: string;
+  resolution: string;
+}
+
+export interface NarrativeAnalysis {
+  summary: string;
+  phases: NarrativePhase[];
+  filesAnalyzed: number;
+  totalAdditions: number;
+  totalDeletions: number;
+  ticketCorrelation?: TicketCorrelation;
+  fingerprint?: string;
+  cached?: boolean;
+}
+
+export interface BranchDiffResult {
+  baseBranch: string;
+  files: ChangedFile[];
+  fileDiffs: Record<string, string>;
+}
+
 export type Tab = 'features' | 'review';
+
+export type PipelinePhase =
+  | 'idle'
+  | 'pushing'
+  | 'waiting'
+  | 'passing'
+  | 'failing'
+  | 'fixing'
+  | 'confirming'
+  | 'error';
+
+export interface PipelineStatus {
+  phase: PipelinePhase;
+  message: string;
+  since: number;
+  failedChecks?: string[];
+  fixAttempt?: number;
+  maxAttempts: number;
+}

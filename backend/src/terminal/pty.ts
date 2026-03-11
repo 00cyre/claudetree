@@ -342,3 +342,10 @@ export function getAllSessionStatuses(): Record<string, SessionStatus> {
   }
   return result;
 }
+
+export function writeToSession(worktreeId: string, text: string): boolean {
+  const session = sessions.get(worktreeId);
+  if (!session) return false;
+  session.term.write(text);
+  return true;
+}
