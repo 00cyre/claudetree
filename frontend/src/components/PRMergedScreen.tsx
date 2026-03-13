@@ -1,8 +1,7 @@
 import { useEffect } from 'react';
 import type { Worktree, PRNotification, PRMergedMeta } from '@/types';
-import { Card, CardHeader, CardContent } from '@/components/ui/card';
+import { BlueprintCard } from '@/components/ui/blueprint-card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { CheckCircle2, ArrowRight, ExternalLink, Archive } from 'lucide-react';
 import { extractTicketIdFromBranch } from '@/utils/linear';
 
@@ -71,39 +70,41 @@ export function PRMergedScreen({ worktree, prNumber, prTitle, prUrl, notificatio
       </div>
 
       {/* Merge Details Card */}
-      <Card className="w-full max-w-md">
-        <CardHeader className="flex flex-row items-center justify-between pb-2">
-          <span className="text-sm font-medium">Merge Details</span>
-          {meta.mergedAt && (
-            <span className="font-mono text-xs text-emerald-600 dark:text-emerald-400">
-              {formatRelativeTime(meta.mergedAt)}
-            </span>
-          )}
-        </CardHeader>
-        <CardContent className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-          {ticketId && (
-            <>
-              <span className="text-muted-foreground">Ticket</span>
-              <a
-                href={`https://linear.app/search?q=${encodeURIComponent(ticketId)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-emerald-600 dark:text-emerald-400 hover:underline"
-              >
-                {ticketId.toUpperCase()}
-              </a>
-            </>
-          )}
-          <span className="text-muted-foreground">PR</span>
-          <span>{prTitle}</span>
-          <span className="text-muted-foreground">Branch</span>
-          <span className="font-mono text-xs">{worktree.branch}</span>
-          <span className="text-muted-foreground">Merged by</span>
-          <span>{meta.mergedBy || 'Unknown'}</span>
-          <span className="text-muted-foreground">Commits</span>
-          <span>{meta.commitCount ?? 0}</span>
-        </CardContent>
-      </Card>
+      <BlueprintCard className="w-full max-w-md">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Merge Details</span>
+            {meta.mergedAt && (
+              <span className="font-mono text-xs text-emerald-600 dark:text-emerald-400">
+                {formatRelativeTime(meta.mergedAt)}
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+            {ticketId && (
+              <>
+                <span className="text-muted-foreground">Ticket</span>
+                <a
+                  href={`https://linear.app/search?q=${encodeURIComponent(ticketId)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-emerald-600 dark:text-emerald-400 hover:underline"
+                >
+                  {ticketId.toUpperCase()}
+                </a>
+              </>
+            )}
+            <span className="text-muted-foreground">PR</span>
+            <span>{prTitle}</span>
+            <span className="text-muted-foreground">Branch</span>
+            <span className="font-mono text-xs">{worktree.branch}</span>
+            <span className="text-muted-foreground">Merged by</span>
+            <span>{meta.mergedBy || 'Unknown'}</span>
+            <span className="text-muted-foreground">Commits</span>
+            <span>{meta.commitCount ?? 0}</span>
+          </div>
+        </div>
+      </BlueprintCard>
 
       {/* Action buttons */}
       <div className="flex items-center gap-3">

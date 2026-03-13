@@ -1,18 +1,77 @@
 import { useCallback } from 'react';
+import Markdown from 'react-markdown';
+import rehypeRaw from 'rehype-raw';
 import { api } from '@/api/client';
 import { TerminalView } from '@/components/Terminal';
+import { CodeDiff } from '@/components/tool-ui/code-diff';
+import {
+  MediaImage,
+  MediaVideo,
+  MediaLink,
+  preprocessVideoReferences,
+} from '@/components/markdown/media-components';
 import { usePRDetails } from '@/hooks/usePRDetails';
+import { languageFromFilename } from '@/utils/language';
 import type { PRCheck } from '@/types';
-import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
+import { BlueprintCard } from '@/components/ui/blueprint-card';
+import { DotCard } from '@/components/ui/dot-card';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
-import { GitPullRequest, CheckCircle2, AlertCircle, Circle, ArrowRight, MessageSquare, BotMessageSquare, Eye } from 'lucide-react';
+import { GitPullRequest, CheckCircle2, AlertCircle, Circle, ArrowRight, MessageSquare, BotMessageSquare } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
+
+const commentMarkdownComponents = {
+  img: MediaImage,
+  video: MediaVideo,
+  a: MediaLink,
+  p: ({ children, ...props }: React.ComponentPropsWithoutRef<'p'>) => (
+    <p className="text-xs whitespace-pre-wrap break-words min-w-0 mb-2 last:mb-0" {...props}>{children}</p>
+  ),
+  code: ({ children, className, ...props }: React.ComponentPropsWithoutRef<'code'>) => {
+    const isBlock = className?.includes('language-');
+    if (isBlock) {
+      return (
+        <code className={cn('block text-[11px] font-mono', className)} {...props}>
+          {children}
+        </code>
+      );
+    }
+    return (
+      <code className="bg-muted px-1 py-0.5 rounded text-[11px] font-mono" {...props}>
+        {children}
+      </code>
+    );
+  },
+  pre: ({ children, ...props }: React.ComponentPropsWithoutRef<'pre'>) => (
+    <pre className="text-[11px] font-mono bg-muted/50 rounded-md p-3 overflow-x-auto whitespace-pre my-2" {...props}>
+      {children}
+    </pre>
+  ),
+  ul: ({ children, ...props }: React.ComponentPropsWithoutRef<'ul'>) => (
+    <ul className="text-xs list-disc pl-4 space-y-1 mb-2" {...props}>{children}</ul>
+  ),
+  ol: ({ children, ...props }: React.ComponentPropsWithoutRef<'ol'>) => (
+    <ol className="text-xs list-decimal pl-4 space-y-1 mb-2" {...props}>{children}</ol>
+  ),
+  blockquote: ({ children, ...props }: React.ComponentPropsWithoutRef<'blockquote'>) => (
+    <blockquote className="border-l-2 border-muted-foreground/30 pl-3 text-xs text-muted-foreground italic my-2" {...props}>
+      {children}
+    </blockquote>
+  ),
+  h1: ({ children, ...props }: React.ComponentPropsWithoutRef<'h1'>) => (
+    <h1 className="text-sm font-semibold mb-1" {...props}>{children}</h1>
+  ),
+  h2: ({ children, ...props }: React.ComponentPropsWithoutRef<'h2'>) => (
+    <h2 className="text-xs font-semibold mb-1" {...props}>{children}</h2>
+  ),
+  h3: ({ children, ...props }: React.ComponentPropsWithoutRef<'h3'>) => (
+    <h3 className="text-xs font-semibold mb-1" {...props}>{children}</h3>
+  ),
+};
 
 function formatRelativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -202,11 +261,9 @@ function LoadingSkeleton() {
 
 interface PRReviewPanelProps {
   worktreeId: string;
-  pipelineEnabled?: boolean;
-  onTogglePipeline?: (enabled: boolean) => void;
 }
 
-export function PRReviewPanel({ worktreeId, pipelineEnabled, onTogglePipeline }: PRReviewPanelProps) {
+export function PRReviewPanel({ worktreeId }: PRReviewPanelProps) {
   const { data, loading, refreshing, error } = usePRDetails(worktreeId);
 
   const handleAddressWithAI = useCallback(async (commentBody: string, filePath?: string, line?: number) => {
@@ -284,11 +341,9 @@ export function PRReviewPanel({ worktreeId, pipelineEnabled, onTogglePipeline }:
                   </div>
 
                   {/* Reviews */}
-                  <Card>
-                    <CardHeader className="pb-2">
+                  <BlueprintCard>
+                    <div className="space-y-2">
                       <span className="text-xs font-medium">Review Status</span>
-                    </CardHeader>
-                    <CardContent className="space-y-2">
                       {data.reviews.length === 0 && (
                         <p className="text-xs text-muted-foreground">No reviews yet</p>
                       )}
@@ -304,39 +359,39 @@ export function PRReviewPanel({ worktreeId, pipelineEnabled, onTogglePipeline }:
                           </Badge>
                         </div>
                       ))}
-                    </CardContent>
-                  </Card>
+                    </div>
+                  </BlueprintCard>
 
                   {/* Pipelines - Vertical Stepper */}
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium">Pipelines</span>
-                        {onTogglePipeline && (
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[10px] text-muted-foreground">Watch</span>
-                            <Switch
-                              size="sm"
-                              checked={!!pipelineEnabled}
-                              onCheckedChange={onTogglePipeline}
-                            />
-                          </div>
-                        )}
-                      </div>
-                      {onTogglePipeline && (
-                        <p className="text-[10px] text-muted-foreground leading-snug mt-1">
-                          Auto-fixes build, unit test, and e2e failures by sending logs to Claude Code.
-                        </p>
-                      )}
-                    </CardHeader>
-                    <CardContent>
+                  <BlueprintCard>
+                    <div className="space-y-2">
+                      <span className="text-xs font-medium">Pipelines</span>
                       {data.checks.length === 0 ? (
                         <p className="text-xs text-muted-foreground">No CI checks</p>
                       ) : (
-                        <PipelineVerticalStepper checks={data.checks} />
+                        <>
+                          <PipelineVerticalStepper checks={data.checks} />
+                          {data.checks.some(c => (c.status === 'COMPLETED' || c.status === 'completed') && c.conclusion?.toUpperCase() === 'FAILURE') && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="gap-1.5 w-full text-xs"
+                              onClick={() => {
+                                const failedNames = data.checks
+                                  .filter(c => (c.status === 'COMPLETED' || c.status === 'completed') && c.conclusion?.toUpperCase() === 'FAILURE')
+                                  .map(c => c.name)
+                                  .join(', ');
+                                handleAddressWithAI(`CI checks are failing: ${failedNames}. Please investigate the failing pipeline logs and fix the issues.`);
+                              }}
+                            >
+                              <BotMessageSquare className="size-3.5" />
+                              Autofix failing checks
+                            </Button>
+                          )}
+                        </>
                       )}
-                    </CardContent>
-                  </Card>
+                    </div>
+                  </BlueprintCard>
                 </div>
               </ScrollArea>
             </ResizablePanel>
@@ -362,14 +417,14 @@ export function PRReviewPanel({ worktreeId, pipelineEnabled, onTogglePipeline }:
         {/* Right: Comments with actions */}
         <ResizablePanel id="pr-right" defaultSize={60} minSize={30}>
           <ScrollArea className="h-full">
-            <div className="p-3 space-y-3 min-w-0 max-w-[600px] overflow-hidden">
+            <div className="p-3 space-y-3 min-w-0 max-w-[1034px] overflow-hidden">
               <span className="text-xs font-medium">Comments</span>
               {data.comments.length === 0 && (
                 <p className="text-xs text-muted-foreground">No comments yet</p>
               )}
               {data.comments.map((c) => (
-                <Card key={c.id} className="min-w-0 overflow-hidden">
-                  <CardContent className="pt-3 space-y-2 min-w-0">
+                <DotCard key={c.id} className="min-w-0 max-w-[734px]">
+                  <div className="space-y-2 min-w-0">
                     <div className="flex items-center gap-2 min-w-0">
                       <AvatarCircle login={c.author.login} avatarUrl={c.author.avatarUrl} name={c.author.name} />
                       <span className="text-xs font-medium truncate">{c.author.name || c.author.login}</span>
@@ -386,11 +441,21 @@ export function PRReviewPanel({ worktreeId, pipelineEnabled, onTogglePipeline }:
                       </div>
                     )}
                     {c.diffHunk && (
-                      <pre className="text-[10px] font-mono bg-muted/50 rounded p-2 overflow-x-auto whitespace-pre-wrap max-h-32 min-w-0">
-                        {c.diffHunk}
-                      </pre>
+                      <CodeDiff
+                        id={`comment-${c.id}`}
+                        patch={c.path
+                          ? `--- a/${c.path}\n+++ b/${c.path}\n${c.diffHunk}`
+                          : `--- a/file\n+++ b/file\n${c.diffHunk}`}
+                        language={c.path ? languageFromFilename(c.path) : 'text'}
+                        filename={c.path?.split('/').pop()}
+                        lineNumbers="visible"
+                        diffStyle="unified"
+                        maxCollapsedLines={8}
+                      />
                     )}
-                    <p className="text-xs whitespace-pre-wrap break-words min-w-0">{c.body}</p>
+                    <div className="min-w-0">
+                      <Markdown rehypePlugins={[rehypeRaw]} components={commentMarkdownComponents}>{preprocessVideoReferences(c.body)}</Markdown>
+                    </div>
                     <Button
                       size="sm"
                       variant="outline"
@@ -400,8 +465,8 @@ export function PRReviewPanel({ worktreeId, pipelineEnabled, onTogglePipeline }:
                       <BotMessageSquare className="size-3.5" />
                       Autofix
                     </Button>
-                  </CardContent>
-                </Card>
+                  </div>
+                </DotCard>
               ))}
             </div>
           </ScrollArea>

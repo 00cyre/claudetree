@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { PipelineStatus } from '@/types';
-import { Card, CardHeader, CardContent } from '@/components/ui/card';
+import { BlueprintCard } from '@/components/ui/blueprint-card';
 import { CheckCircle2, Circle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
@@ -90,9 +90,9 @@ export function PipelineProgressTracker({ status }: PipelineProgressTrackerProps
 
   return (
     <div className="fixed bottom-4 right-4 z-50 w-72">
-      <Card className="shadow-lg">
-        <CardHeader
-          className="flex flex-row items-center justify-between py-2 px-3 cursor-pointer select-none"
+      <BlueprintCard className="shadow-lg bg-background">
+        <div
+          className="flex items-center justify-between cursor-pointer select-none"
           onClick={() => setCollapsed(!collapsed)}
         >
           <span className="text-sm font-medium">Pipeline Watcher</span>
@@ -100,34 +100,32 @@ export function PipelineProgressTracker({ status }: PipelineProgressTrackerProps
             <span className="text-xs text-muted-foreground">{elapsed}</span>
             {collapsed ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
           </div>
-        </CardHeader>
+        </div>
         {!collapsed && (
-          <CardContent className="px-3 pb-3 pt-0">
-            <div className="space-y-2">
-              {steps.map((step, i) => (
-                <div
-                  key={i}
-                  className={cn(
-                    'flex items-center gap-2 text-sm',
-                    step.state === 'pending' && 'text-muted-foreground/50',
-                    step.state === 'active' && 'text-foreground font-medium',
-                    step.state === 'done' && 'text-muted-foreground',
-                    step.state === 'failed' && 'text-red-500',
-                  )}
-                >
-                  <StepIcon state={step.state} />
-                  <span>{step.label}</span>
-                </div>
-              ))}
-            </div>
+          <div className="mt-3 space-y-2">
+            {steps.map((step, i) => (
+              <div
+                key={i}
+                className={cn(
+                  'flex items-center gap-2 text-sm',
+                  step.state === 'pending' && 'text-muted-foreground/50',
+                  step.state === 'active' && 'text-foreground font-medium',
+                  step.state === 'done' && 'text-muted-foreground',
+                  step.state === 'failed' && 'text-red-500',
+                )}
+              >
+                <StepIcon state={step.state} />
+                <span>{step.label}</span>
+              </div>
+            ))}
             {status.fixAttempt != null && status.fixAttempt > 0 && (
               <div className="mt-2 text-xs text-muted-foreground">
                 Fix attempt {status.fixAttempt}/{status.maxAttempts}
               </div>
             )}
-          </CardContent>
+          </div>
         )}
-      </Card>
+      </BlueprintCard>
     </div>
   );
 }

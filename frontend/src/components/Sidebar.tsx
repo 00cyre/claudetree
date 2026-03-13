@@ -84,32 +84,38 @@ function pipelineDotStyle(phase: string): string {
   }
 }
 
-const PR_WATCHER_LABEL: Record<string, { label: string; className: string }> = {
-  discovering: { label: 'Discovering PR...', className: 'text-muted-foreground' },
-  watching: { label: 'Watching PR', className: 'text-blue-600 dark:text-blue-400' },
-  ci_failing: { label: 'PR CI failed', className: 'text-red-600 dark:text-red-400' },
-  fixing: { label: 'Auto-fixing CI...', className: 'text-amber-600 dark:text-amber-400' },
-  pushing_fix: { label: 'Pushing fix...', className: 'text-amber-600 dark:text-amber-400' },
-  no_pr: { label: 'No PR found', className: 'text-muted-foreground' },
-  error: { label: 'PR watcher error', className: 'text-red-600 dark:text-red-400' },
-};
+function derivePRLabel(prWatcherStatus: PRWatcherStatus): { label: string; className: string } {
+  const { phase, reviewDecision, ciStatus } = prWatcherStatus;
 
-function prWatcherDotStyle(phase: string): string {
-  switch (phase) {
-    case 'discovering':
-    case 'fixing':
-    case 'pushing_fix':
-      return 'bg-amber-400 animate-pulse';
-    case 'watching':
-      return 'bg-blue-400';
-    case 'ci_failing':
-    case 'error':
-      return 'bg-red-400';
-    case 'no_pr':
-      return 'bg-gray-400';
-    default:
-      return '';
-  }
+  // Non-watching phases have fixed labels
+  if (phase === 'discovering') return { label: 'Looking for PR...', className: 'text-muted-foreground' };
+  if (phase === 'fixing') return { label: 'Auto-fixing CI...', className: 'text-amber-600 dark:text-amber-400' };
+  if (phase === 'pushing_fix') return { label: 'Pushing fix...', className: 'text-amber-600 dark:text-amber-400' };
+  if (phase === 'no_pr') return { label: 'No PR found', className: 'text-muted-foreground' };
+  if (phase === 'error') return { label: 'PR error', className: 'text-red-600 dark:text-red-400' };
+
+  // For watching / ci_failing — derive from review + CI state
+  if (reviewDecision === 'CHANGES_REQUESTED') return { label: 'Changes requested', className: 'text-red-600 dark:text-red-400' };
+  if (ciStatus === 'failing') return { label: 'CI failing', className: 'text-red-600 dark:text-red-400' };
+  if (reviewDecision === 'APPROVED' && ciStatus === 'passing') return { label: 'Ready to merge', className: 'text-emerald-600 dark:text-emerald-400' };
+  if (reviewDecision === 'APPROVED') return { label: 'Approved', className: 'text-emerald-600 dark:text-emerald-400' };
+  if (ciStatus === 'passing') return { label: 'CI passing', className: 'text-emerald-600 dark:text-emerald-400' };
+  if (ciStatus === 'pending') return { label: 'CI running...', className: 'text-amber-600 dark:text-amber-400' };
+  if (reviewDecision === 'REVIEW_REQUIRED') return { label: 'Waiting for review', className: 'text-blue-600 dark:text-blue-400' };
+
+  return { label: 'PR open', className: 'text-blue-600 dark:text-blue-400' };
+}
+
+function prWatcherDotStyle(prWatcherStatus: PRWatcherStatus): string {
+  const { phase, reviewDecision, ciStatus } = prWatcherStatus;
+  if (phase === 'discovering' || phase === 'fixing' || phase === 'pushing_fix') return 'bg-amber-400 animate-pulse';
+  if (phase === 'no_pr') return 'bg-gray-400';
+  if (phase === 'error') return 'bg-red-400';
+  if (reviewDecision === 'CHANGES_REQUESTED' || ciStatus === 'failing') return 'bg-red-400';
+  if (reviewDecision === 'APPROVED' && ciStatus === 'passing') return 'bg-emerald-400';
+  if (reviewDecision === 'APPROVED' || ciStatus === 'passing') return 'bg-emerald-400';
+  if (ciStatus === 'pending') return 'bg-amber-400 animate-pulse';
+  return 'bg-blue-400';
 }
 
 const SIDEBAR_STEP_ICONS: Record<string, React.ReactNode> = {
@@ -292,41 +298,29 @@ function SidebarStepper({
 function ActivityLine({ status, pipelineStatus, prWatcherStatus }: { status: SessionStatus; pipelineStatus?: PipelineStatus; prWatcherStatus?: PRWatcherStatus }) {
   // PRWatcher takes priority when active
   if (prWatcherStatus && prWatcherStatus.phase !== 'stopped') {
-    const elapsed = formatElapsed(Date.now() - prWatcherStatus.since);
-    const info = PR_WATCHER_LABEL[prWatcherStatus.phase] ?? { label: prWatcherStatus.phase, className: 'text-muted-foreground' };
+    const info = derivePRLabel(prWatcherStatus);
 
-    const prLabel = prWatcherStatus.prNumber
-      ? `${info.label} #${prWatcherStatus.prNumber}`
-      : info.label;
-
-    // Show new comment count if watching
-    const undismissed = prWatcherStatus.notifications.filter((n) => !n.dismissed);
-    const newComments = undismissed.filter((n) => n.type === 'new_comment' || n.type === 'new_review').length;
+    const isSpinning = prWatcherStatus.phase === 'discovering' || prWatcherStatus.phase === 'fixing' || prWatcherStatus.phase === 'pushing_fix' || prWatcherStatus.ciStatus === 'pending';
 
     const icon = (() => {
-      switch (prWatcherStatus.phase) {
-        case 'discovering':
-        case 'fixing':
-        case 'pushing_fix':
-          return <Spinner className="size-3" />;
-        case 'watching':
-          return <GitPullRequest className="size-3 shrink-0" />;
-        case 'ci_failing':
-        case 'error':
-          return <AlertCircle className="size-3 shrink-0" />;
-        default:
-          return <Circle className="size-3 shrink-0" />;
-      }
+      if (isSpinning) return <Spinner className="size-3" />;
+      if (prWatcherStatus.reviewDecision === 'CHANGES_REQUESTED' || prWatcherStatus.ciStatus === 'failing' || prWatcherStatus.phase === 'error')
+        return <AlertCircle className="size-3 shrink-0" />;
+      if (prWatcherStatus.reviewDecision === 'APPROVED' || prWatcherStatus.ciStatus === 'passing')
+        return <CheckCircle2 className="size-3 shrink-0" />;
+      return <GitPullRequest className="size-3 shrink-0" />;
     })();
+
+    // Show new comment count
+    const newComments = prWatcherStatus.notifications.filter((n) => !n.dismissed && (n.type === 'new_comment' || n.type === 'new_review')).length;
 
     return (
       <span className={cn('flex items-center gap-1', info.className)}>
         {icon}
-        <span className="truncate">{prLabel}</span>
+        <span className="truncate">{info.label}</span>
         {newComments > 0 && (
           <span className="shrink-0 text-blue-500 font-medium">{newComments} new</span>
         )}
-        <span className="shrink-0 text-muted-foreground">({elapsed})</span>
       </span>
     );
   }
@@ -531,92 +525,99 @@ function WorktreeItem({
       onDragEnd={onDragEnd}
     >
       <SidebarMenuButton
+        asChild
         isActive={isActive}
         tooltip={wt.name}
-        onClick={onSelect}
-        className="h-auto py-1.5 items-start"
       >
-        <div className="flex flex-col items-center gap-1 shrink-0 mt-0.5">
-          <GitBranchIcon size={16} />
-          <GripVertical className="size-3 text-muted-foreground/50 cursor-grab" />
-        </div>
-        <div className="flex flex-col min-w-0 gap-0.5">
-          <div className="flex items-center gap-1.5 min-w-0">
-            {status && (
-              <span className={cn(
-                'size-2 rounded-full shrink-0',
-                prWatcherStatus && prWatcherStatus.phase !== 'stopped'
-                  ? prWatcherDotStyle(prWatcherStatus.phase)
-                  : pipelineStatus && pipelineStatus.phase !== 'idle'
-                    ? pipelineDotStyle(pipelineStatus.phase)
-                    : STATUS_DOT_STYLES[status.state],
-              )} />
-            )}
-            <span className="truncate text-sm leading-tight">{wt.name}</span>
+        <div onClick={onSelect} className="h-auto py-1.5 pb-2 items-start cursor-pointer">
+          <div className="flex flex-col items-center gap-1 shrink-0 mt-0.5" onClick={(e) => e.stopPropagation()}>
+            <GripVertical className="size-3 text-muted-foreground/50 cursor-grab" />
+            <GitBranchIcon size={16} />
+            <Popover.Root>
+              <Popover.Trigger asChild>
+                <button
+                  className="size-5 flex items-center justify-center rounded text-muted-foreground"
+                  title="Set flags"
+                >
+                  <Tag className="size-3" />
+                </button>
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Content
+                  side="right"
+                  align="start"
+                  sideOffset={4}
+                  className="z-50 rounded-lg border border-border bg-popover text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <FlagPicker
+                    worktreeFlags={wtFlags}
+                    allFlags={allFlags}
+                    onToggleFlag={toggleFlag}
+                    onCreateFlag={onCreateFlag}
+                  />
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
           </div>
-          {ticketId && (
-            <span className="text-[10px] text-muted-foreground truncate leading-tight" title={ticketId}>
-              {ticketId}
-            </span>
-          )}
-          {description && (
-            <span className="text-[10px] text-muted-foreground/80 truncate leading-tight italic" title={description}>
-              {description}
-            </span>
-          )}
-          {flagDefs.length > 0 && (
-            <div className="flex gap-1 flex-wrap mt-0.5">
-              {flagDefs.map((f) => (
-                <Badge key={f.name} variant="outline" className="h-4 text-[9px] px-1.5 gap-1">
-                  <span className="size-1.5 rounded-full shrink-0" style={{ backgroundColor: f.color }} />
-                  {f.name}
-                </Badge>
-              ))}
+          <div className="flex flex-col min-w-0 gap-[10px]">
+            <div className="flex items-center gap-1.5 min-w-0">
+              {status && (
+                <span className={cn(
+                  'size-2 rounded-full shrink-0',
+                  prWatcherStatus && prWatcherStatus.phase !== 'stopped'
+                    ? prWatcherDotStyle(prWatcherStatus)
+                    : pipelineStatus && pipelineStatus.phase !== 'idle'
+                      ? pipelineDotStyle(pipelineStatus.phase)
+                      : STATUS_DOT_STYLES[status.state],
+                )} />
+              )}
+              <span className="truncate text-sm leading-tight">{wt.name}</span>
             </div>
-          )}
-          {status && (
-            <div className="text-[10px] leading-tight">
-              <ActivityLine status={status} pipelineStatus={pipelineStatus} prWatcherStatus={prWatcherStatus} />
+            {ticketId && (
+              <span className="text-[10px] text-muted-foreground truncate leading-tight" title={ticketId}>
+                {ticketId}
+              </span>
+            )}
+            {description && (
+              <span className="text-[10px] text-muted-foreground/80 truncate leading-tight italic" title={description}>
+                {description}
+              </span>
+            )}
+            {flagDefs.length > 0 && (
+              <div className="flex gap-1 flex-wrap mt-0.5">
+                {flagDefs.map((f) => (
+                  <Badge key={f.name} variant="outline" className="h-4 text-[9px] px-1.5 gap-1 group/flag">
+                    <span className="size-1.5 rounded-full shrink-0" style={{ backgroundColor: f.color }} />
+                    {f.name}
+                    <button
+                      className="size-3 flex items-center justify-center rounded-full hover:bg-muted-foreground/20 -mr-0.5 shrink-0"
+                      onClick={(e) => { e.stopPropagation(); toggleFlag(f.name); }}
+                      title={`Remove ${f.name}`}
+                    >
+                      <X className="size-2" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            )}
+            {status && (
+              <div className="text-[10px] leading-tight">
+                <ActivityLine status={status} pipelineStatus={pipelineStatus} prWatcherStatus={prWatcherStatus} />
+              </div>
+            )}
+            <div onClick={(e) => e.stopPropagation()}>
+              <SidebarStepper
+                currentStep={currentStep ?? derivedStep}
+                onStepClick={isActive ? onStepClick : undefined}
+                prWatcherStatus={prWatcherStatus}
+                sessionStatus={status}
+              />
             </div>
-          )}
-          <div className="mt-1" onClick={(e) => e.stopPropagation()}>
-            <SidebarStepper
-              currentStep={currentStep ?? derivedStep}
-              onStepClick={isActive ? onStepClick : undefined}
-              prWatcherStatus={prWatcherStatus}
-              sessionStatus={status}
-            />
           </div>
         </div>
       </SidebarMenuButton>
       <div className="absolute right-1 top-1 flex items-center gap-0.5 opacity-0 group-hover/menu-item:opacity-100 transition-opacity">
-        <Popover.Root>
-          <Popover.Trigger asChild>
-            <button
-              className="size-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted"
-              onClick={(e) => e.stopPropagation()}
-              title="Set flags"
-            >
-              <Tag className="size-3" />
-            </button>
-          </Popover.Trigger>
-          <Popover.Portal>
-            <Popover.Content
-              side="right"
-              align="start"
-              sideOffset={4}
-              className="z-50 rounded-lg border border-border bg-popover text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <FlagPicker
-                worktreeFlags={wtFlags}
-                allFlags={allFlags}
-                onToggleFlag={toggleFlag}
-                onCreateFlag={onCreateFlag}
-              />
-            </Popover.Content>
-          </Popover.Portal>
-        </Popover.Root>
         <button
           className="size-5 flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-muted"
           onClick={(e) => { e.stopPropagation(); onDelete(); }}

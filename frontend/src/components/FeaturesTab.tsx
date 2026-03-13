@@ -83,8 +83,8 @@ export function FeaturesTab({
                   </div>
                 </ResizablePanel>
                 <ResizableHandle withHandle />
-                <ResizablePanel id="ticket">
-                  <div className="flex flex-col h-full overflow-hidden">
+                <ResizablePanel id="ticket" className="min-h-0">
+                  <div className="flex flex-col h-full min-h-0 overflow-hidden">
                     {loadingIssue && (
                       <div className="flex items-center justify-center p-6 text-sm text-muted-foreground">
                         Loading issue...
@@ -152,14 +152,7 @@ export function FeaturesTab({
         )}
 
         {currentStep === 'pr' && selectedWorktree && (
-          <PRReviewPanel
-            worktreeId={selectedWorktree.id}
-            pipelineEnabled={pipelineStatus ? pipelineStatus.phase !== 'idle' : false}
-            onTogglePipeline={(enabled) => {
-              if (enabled) onEnablePipeline?.();
-              else onDisablePipeline?.();
-            }}
-          />
+          <PRReviewPanel worktreeId={selectedWorktree.id} />
         )}
 
         {currentStep === 'pr' && !selectedWorktree && (

@@ -46,7 +46,7 @@ export default defineConfig(async () => {
       dedupe: ['react', 'react-dom'],
     },
     optimizeDeps: {
-      include: ['react', 'react-dom', '@stepperize/react'],
+      include: ['react', 'react-dom', '@stepperize/react', 'react-markdown', 'rehype-raw'],
     },
     server: {
       port: frontendPort,

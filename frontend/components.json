@@ -23,6 +23,8 @@
   },
   "registries": {
     "@tool-ui": "https://www.tool-ui.com/r/{name}.json",
-    "@lucide-animated": "https://lucide-animated.com/r/{name}.json"
+    "@lucide-animated": "https://lucide-animated.com/r/{name}.json",
+    "@cardcn": "https://cardcn.dev/r/{name}.json",
+    "@limeplay": "https://limeplay.winoffrg.dev/r/{name}.json"
   }
 }
