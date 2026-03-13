@@ -258,7 +258,7 @@ export type PRWatcherPhase =
   | 'stopped'
   | 'error';
 
-export type PRReviewDecision = 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED';
+export type PRReviewDecision = 'APPROVED' | 'CHANGES_REQUESTED' | 'CHANGES_ADDRESSED' | 'REVIEW_REQUIRED';
 export type PRCIStatus = 'passing' | 'failing' | 'pending';
 
 export interface PRMergedMeta {

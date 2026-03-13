@@ -12,7 +12,7 @@ import {
 } from '@/components/markdown/media-components';
 import { usePRDetails } from '@/hooks/usePRDetails';
 import { languageFromFilename } from '@/utils/language';
-import type { PRCheck } from '@/types';
+import type { PRCheck, PRReviewDecision } from '@/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -259,11 +259,22 @@ function LoadingSkeleton() {
   );
 }
 
-interface PRReviewPanelProps {
-  worktreeId: string;
+function overallReviewLabel(decision?: PRReviewDecision): { text: string; className: string } | null {
+  switch (decision) {
+    case 'APPROVED': return { text: 'Approved', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' };
+    case 'CHANGES_REQUESTED': return { text: 'Changes requested', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' };
+    case 'CHANGES_ADDRESSED': return { text: 'Changes addressed — waiting for re-review', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' };
+    case 'REVIEW_REQUIRED': return { text: 'Waiting for review', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' };
+    default: return null;
+  }
 }
 
-export function PRReviewPanel({ worktreeId }: PRReviewPanelProps) {
+interface PRReviewPanelProps {
+  worktreeId: string;
+  reviewDecision?: PRReviewDecision;
+}
+
+export function PRReviewPanel({ worktreeId, reviewDecision }: PRReviewPanelProps) {
   const { data, loading, refreshing, error } = usePRDetails(worktreeId);
 
   const handleAddressWithAI = useCallback(async (commentBody: string, filePath?: string, line?: number) => {
@@ -310,7 +321,7 @@ export function PRReviewPanel({ worktreeId }: PRReviewPanelProps) {
             {refreshing && <Spinner className="size-3 shrink-0" />}
           </div>
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-            <span>{data.approvalCount} approval{data.approvalCount !== 1 ? 's' : ''}</span>
+            <span>{overallReviewLabel(reviewDecision)?.text ?? `${data.approvalCount} approval${data.approvalCount !== 1 ? 's' : ''}`}</span>
             <span>·</span>
             <span>{ciSummary}</span>
             <span>·</span>
@@ -343,7 +354,14 @@ export function PRReviewPanel({ worktreeId }: PRReviewPanelProps) {
                   {/* Reviews */}
                   <BlueprintCard>
                     <div className="space-y-2">
-                      <span className="text-xs font-medium">Review Status</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium">Review Status</span>
+                        {overallReviewLabel(reviewDecision) && (
+                          <Badge variant="secondary" className={cn('text-[10px]', overallReviewLabel(reviewDecision)!.className)}>
+                            {overallReviewLabel(reviewDecision)!.text}
+                          </Badge>
+                        )}
+                      </div>
                       {data.reviews.length === 0 && (
                         <p className="text-xs text-muted-foreground">No reviews yet</p>
                       )}

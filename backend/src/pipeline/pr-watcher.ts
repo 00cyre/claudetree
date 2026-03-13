@@ -36,7 +36,7 @@ export interface PRNotification {
   meta?: Record<string, unknown>;
 }
 
-export type PRReviewDecision = 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED';
+export type PRReviewDecision = 'APPROVED' | 'CHANGES_REQUESTED' | 'CHANGES_ADDRESSED' | 'REVIEW_REQUIRED';
 export type PRCIStatus = 'passing' | 'failing' | 'pending';
 
 export interface PRWatcherStatus {
@@ -126,14 +126,67 @@ class PRWatcher {
     if (notif) notif.dismissed = true;
   }
 
-  private computeReviewDecision(reviews: Array<{ state: string }>): PRReviewDecision | undefined {
+  private computeReviewDecision(
+    reviews: Array<{ state: string }>,
+    allThreadsResolved?: boolean,
+  ): PRReviewDecision | undefined {
     if (reviews.length === 0) return 'REVIEW_REQUIRED';
-    // Deduplicate: use latest review state per implicit ordering (last wins)
     const hasChangesRequested = reviews.some(r => r.state === 'CHANGES_REQUESTED');
-    if (hasChangesRequested) return 'CHANGES_REQUESTED';
+    if (hasChangesRequested) {
+      // If all review threads are resolved, the author has addressed everything
+      if (allThreadsResolved) return 'CHANGES_ADDRESSED';
+      return 'CHANGES_REQUESTED';
+    }
     const hasApproval = reviews.some(r => r.state === 'APPROVED');
     if (hasApproval) return 'APPROVED';
     return 'REVIEW_REQUIRED';
+  }
+
+  private async fetchThreadResolution(): Promise<boolean | undefined> {
+    if (!this.status.prNumber) return undefined;
+    try {
+      // Use gh to get repo info then query review threads
+      const { stdout: repoStdout } = await execFileAsync('gh', [
+        'repo', 'view', '--json', 'owner,name',
+      ], { cwd: this.worktreePath });
+      const repo = JSON.parse(repoStdout) as { owner: { login: string }; name: string };
+
+      const query = `query($owner:String!,$name:String!,$number:Int!){
+        repository(owner:$owner,name:$name){
+          pullRequest(number:$number){
+            reviewThreads(first:100){
+              nodes{ isResolved }
+            }
+          }
+        }
+      }`;
+
+      const { stdout } = await execFileAsync('gh', [
+        'api', 'graphql',
+        '-f', `query=${query}`,
+        '-F', `owner=${repo.owner.login}`,
+        '-F', `name=${repo.name}`,
+        '-F', `number=${this.status.prNumber}`,
+      ], { cwd: this.worktreePath });
+
+      const result = JSON.parse(stdout) as {
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                nodes: Array<{ isResolved: boolean }>;
+              };
+            };
+          };
+        };
+      };
+
+      const threads = result.data.repository.pullRequest.reviewThreads.nodes;
+      if (threads.length === 0) return true; // No threads = nothing unresolved
+      return threads.every(t => t.isResolved);
+    } catch {
+      return undefined; // Can't determine, don't override
+    }
   }
 
   private computeCIStatus(checks?: Array<{ status: string; conclusion: string }>): PRCIStatus | undefined {
@@ -190,7 +243,8 @@ class PRWatcher {
         return;
       }
 
-      this.status.reviewDecision = this.computeReviewDecision(pr.reviews);
+      const allThreadsResolved = await this.fetchThreadResolution();
+      this.status.reviewDecision = this.computeReviewDecision(pr.reviews, allThreadsResolved ?? undefined);
       this.status.ciStatus = this.computeCIStatus(pr.statusCheckRollup);
 
       this.setPhase('watching', `Watching PR #${pr.number}`);
@@ -286,7 +340,8 @@ class PRWatcher {
       }
 
       // Update review decision and CI status
-      this.status.reviewDecision = this.computeReviewDecision(pr.reviews);
+      const allThreadsResolved = await this.fetchThreadResolution();
+      this.status.reviewDecision = this.computeReviewDecision(pr.reviews, allThreadsResolved ?? undefined);
       this.status.ciStatus = this.computeCIStatus(pr.statusCheckRollup);
 
       // Check CI status

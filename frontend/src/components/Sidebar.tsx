@@ -96,6 +96,7 @@ function derivePRLabel(prWatcherStatus: PRWatcherStatus): { label: string; class
 
   // For watching / ci_failing — derive from review + CI state
   if (reviewDecision === 'CHANGES_REQUESTED') return { label: 'Changes requested', className: 'text-red-600 dark:text-red-400' };
+  if (reviewDecision === 'CHANGES_ADDRESSED') return { label: 'Changes addressed', className: 'text-amber-600 dark:text-amber-400' };
   if (ciStatus === 'failing') return { label: 'CI failing', className: 'text-red-600 dark:text-red-400' };
   if (reviewDecision === 'APPROVED' && ciStatus === 'passing') return { label: 'Ready to merge', className: 'text-emerald-600 dark:text-emerald-400' };
   if (reviewDecision === 'APPROVED') return { label: 'Approved', className: 'text-emerald-600 dark:text-emerald-400' };
@@ -112,6 +113,7 @@ function prWatcherDotStyle(prWatcherStatus: PRWatcherStatus): string {
   if (phase === 'no_pr') return 'bg-gray-400';
   if (phase === 'error') return 'bg-red-400';
   if (reviewDecision === 'CHANGES_REQUESTED' || ciStatus === 'failing') return 'bg-red-400';
+  if (reviewDecision === 'CHANGES_ADDRESSED') return 'bg-amber-400';
   if (reviewDecision === 'APPROVED' && ciStatus === 'passing') return 'bg-emerald-400';
   if (reviewDecision === 'APPROVED' || ciStatus === 'passing') return 'bg-emerald-400';
   if (ciStatus === 'pending') return 'bg-amber-400 animate-pulse';
@@ -150,6 +152,11 @@ function computePRUrgency(prWatcherStatus?: PRWatcherStatus): StepUrgency {
   // CI failing or changes requested → action needed (red)
   if (prWatcherStatus.ciStatus === 'failing' || prWatcherStatus.reviewDecision === 'CHANGES_REQUESTED') {
     return 'action-needed';
+  }
+
+  // Changes addressed (all threads resolved) → waiting for re-review (amber)
+  if (prWatcherStatus.reviewDecision === 'CHANGES_ADDRESSED') {
+    return 'attention';
   }
 
   // CI passing + approved → ready to merge (green)
@@ -306,6 +313,8 @@ function ActivityLine({ status, pipelineStatus, prWatcherStatus }: { status: Ses
       if (isSpinning) return <Spinner className="size-3" />;
       if (prWatcherStatus.reviewDecision === 'CHANGES_REQUESTED' || prWatcherStatus.ciStatus === 'failing' || prWatcherStatus.phase === 'error')
         return <AlertCircle className="size-3 shrink-0" />;
+      if (prWatcherStatus.reviewDecision === 'CHANGES_ADDRESSED')
+        return <CheckCircle2 className="size-3 shrink-0" />;
       if (prWatcherStatus.reviewDecision === 'APPROVED' || prWatcherStatus.ciStatus === 'passing')
         return <CheckCircle2 className="size-3 shrink-0" />;
       return <GitPullRequest className="size-3 shrink-0" />;

@@ -152,7 +152,7 @@ export function FeaturesTab({
         )}
 
         {currentStep === 'pr' && selectedWorktree && (
-          <PRReviewPanel worktreeId={selectedWorktree.id} />
+          <PRReviewPanel worktreeId={selectedWorktree.id} reviewDecision={prWatcherStatus?.reviewDecision} />
         )}
 
         {currentStep === 'pr' && !selectedWorktree && (
