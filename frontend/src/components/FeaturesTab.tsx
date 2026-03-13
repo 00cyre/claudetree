@@ -131,25 +131,18 @@ export function FeaturesTab({
         )}
 
         {currentStep === 'review' && selectedWorktree && (
-          <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0">
-            <ResizablePanel id="narrative" defaultSize={75}>
-              <NarrativeViewer
-                worktreeId={selectedWorktree.id}
-                baseBranch={baseBranch}
-                aiConnected={aiConnected}
-                ticketContext={ticketContext}
-              />
-            </ResizablePanel>
-            <ResizableHandle withHandle />
-            <ResizablePanel id="toolbox" defaultSize={25}>
-              <div className="flex flex-col h-full overflow-hidden">
-                <ReviewToolbox
-                  worktreeId={selectedWorktree.id}
-                  branches={branches}
-                />
-              </div>
-            </ResizablePanel>
-          </ResizablePanelGroup>
+          <div className="flex-1 min-h-0 relative">
+            <NarrativeViewer
+              worktreeId={selectedWorktree.id}
+              baseBranch={baseBranch}
+              aiConnected={aiConnected}
+              ticketContext={ticketContext}
+            />
+            <ReviewToolbox
+              worktreeId={selectedWorktree.id}
+              branches={branches}
+            />
+          </div>
         )}
 
         {currentStep === 'review' && !selectedWorktree && (
