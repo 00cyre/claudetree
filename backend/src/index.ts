@@ -9,11 +9,12 @@ import linearRouter from './routes/linear.js';
 import aiRouter from './routes/ai.js';
 import statusRouter from './routes/status.js';
 import pipelineRouter from './routes/pipeline.js';
+import prWatcherRouter from './routes/pr-watcher.js';
 import terminalRouter from './routes/terminal.js';
 import { setupTerminalWebSocket, preInitializeSessions } from './terminal/pty.js';
 import { discoverAllWorktrees } from './routes/worktrees.js';
 import { linearClient } from './linear/client.js';
-import { loadConfig, getInstanceName } from './config.js';
+import { loadConfig, getInstanceName, ensureDefaultFlags } from './config.js';
 import { findFreePort, writePortFile, registerPortFileCleanup } from './port.js';
 
 const DEFAULT_PORT = parseInt(process.env.CLAUDETREE_PORT || '3001', 10);
@@ -31,6 +32,7 @@ app.use('/api/linear', linearRouter);
 app.use('/api/ai', aiRouter);
 app.use('/api/status', statusRouter);
 app.use('/api/pipeline', pipelineRouter);
+app.use('/api/pr-watcher', prWatcherRouter);
 app.use('/api/terminal', terminalRouter);
 
 const server = createServer(app);
@@ -57,10 +59,20 @@ try {
       });
     }
 
+    // Ensure default flags exist
+    ensureDefaultFlags();
+
     // Pre-initialize Claude Code for all worktrees so switching tabs is instant
     try {
       const worktrees = await discoverAllWorktrees();
       preInitializeSessions(worktrees.map((w) => ({ id: w.id, path: w.path })));
+
+      // Auto-detect PRs for all worktrees (replaces manual "PR OPEN" flag requirement)
+      const { startAutoScan } = await import('./pipeline/pr-watcher.js');
+      startAutoScan(async () => {
+        const wts = await discoverAllWorktrees();
+        return wts.map(w => ({ id: w.id, path: w.path, branch: w.branch }));
+      });
     } catch (err) {
       console.error('Failed to pre-initialize worktree terminals:', err);
     }

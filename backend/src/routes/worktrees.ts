@@ -82,8 +82,16 @@ router.post('/meta/flags', (req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
-router.delete('/meta/flags/:name', (req: Request, res: Response) => {
-  removeFlag(req.params.name);
+router.delete('/meta/flags/:name', async (req: Request, res: Response) => {
+  const flagName = req.params.name;
+  removeFlag(flagName);
+
+  // If deleting PROpen flag, stop all active PR watchers
+  if (flagName === 'PR OPEN') {
+    const { disableAllPRWatchers } = await import('../pipeline/pr-watcher.js');
+    disableAllPRWatchers();
+  }
+
   res.json({ ok: true });
 });
 
@@ -314,7 +322,7 @@ router.put('/:projectId/order', (req: Request, res: Response) => {
 
 // --- Worktree flags ---
 
-router.put('/:worktreeId/flags', (req: Request, res: Response) => {
+router.put('/:worktreeId/flags', async (req: Request, res: Response) => {
   const wt = worktreeRegistry.get(req.params.worktreeId);
   if (!wt) {
     res.status(404).json({ error: 'Worktree not found' });
@@ -326,7 +334,20 @@ router.put('/:worktreeId/flags', (req: Request, res: Response) => {
     return;
   }
   const existing = getWorktreeLink(wt.path) ?? {};
+  const prevFlags = existing.flags ?? [];
   setWorktreeLink(wt.path, { ...existing, flags });
+
+  // PROpen flag toggle → start/stop PR watcher
+  const hadPROpen = prevFlags.includes('PR OPEN');
+  const hasPROpen = flags.includes('PR OPEN');
+  if (!hadPROpen && hasPROpen) {
+    const { enablePRWatcher } = await import('../pipeline/pr-watcher.js');
+    enablePRWatcher(wt.id, wt.path, wt.branch);
+  } else if (hadPROpen && !hasPROpen) {
+    const { disablePRWatcher } = await import('../pipeline/pr-watcher.js');
+    disablePRWatcher(wt.id);
+  }
+
   res.json({ ok: true });
 });
 

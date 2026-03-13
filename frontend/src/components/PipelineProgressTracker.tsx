@@ -18,49 +18,33 @@ function getSteps(status: PipelineStatus): Step[] {
   const phase = status.phase;
 
   const steps: Step[] = [
-    { label: 'Push to origin', state: 'pending' },
-    { label: 'Wait for CI', state: 'pending' },
-    { label: 'Run checks', state: 'pending' },
-    { label: 'Fix failures', state: 'pending' },
-    { label: 'Confirm & push', state: 'pending' },
+    { label: 'Watch CI', state: 'pending' },
+    { label: 'Detect failures', state: 'pending' },
+    { label: 'Auto-fix with Claude', state: 'pending' },
+    { label: 'Verify', state: 'pending' },
   ];
 
   switch (phase) {
-    case 'pushing':
+    case 'watching':
       steps[0].state = 'active';
-      break;
-    case 'waiting':
-      steps[0].state = 'done';
-      steps[1].state = 'active';
       break;
     case 'passing':
       steps[0].state = 'done';
       steps[1].state = 'done';
       steps[2].state = 'done';
       steps[3].state = 'done';
-      steps[4].state = 'done';
       break;
     case 'failing':
       steps[0].state = 'done';
-      steps[1].state = 'done';
-      steps[2].state = 'failed';
+      steps[1].state = 'failed';
       break;
     case 'fixing':
       steps[0].state = 'done';
-      steps[1].state = 'done';
-      steps[2].state = 'failed';
-      steps[3].state = 'active';
-      break;
-    case 'confirming':
-      steps[0].state = 'done';
-      steps[1].state = 'done';
-      steps[2].state = 'failed';
-      steps[3].state = 'done';
-      steps[4].state = 'active';
+      steps[1].state = 'failed';
+      steps[2].state = 'active';
       break;
     case 'error':
       steps[0].state = 'done';
-      // Mark whatever phase we were in as failed
       break;
   }
 
@@ -111,7 +95,7 @@ export function PipelineProgressTracker({ status }: PipelineProgressTrackerProps
           className="flex flex-row items-center justify-between py-2 px-3 cursor-pointer select-none"
           onClick={() => setCollapsed(!collapsed)}
         >
-          <span className="text-sm font-medium">Pipeline Progress</span>
+          <span className="text-sm font-medium">Pipeline Watcher</span>
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">{elapsed}</span>
             {collapsed ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}

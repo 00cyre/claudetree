@@ -1,21 +1,17 @@
 import { useState, useEffect } from 'react';
-import type { PipelineStatus, Tab } from '@/types';
+import type { PipelineStatus, PRWatcherStatus } from '@/types';
 import { Switch } from '@/components/ui/switch';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
-import { useSidebar } from '@/components/ui/sidebar';
-import { CheckCircle2, AlertCircle, ArrowUpCircle, Clock } from 'lucide-react';
+import { CheckCircle2, AlertCircle, GitPullRequest, MessageSquare, Eye } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ContextualToolbarProps {
   worktreeId: string | null;
   pipelineStatus: PipelineStatus | null;
+  prWatcherStatus?: PRWatcherStatus | null;
   onEnablePipeline: () => void;
   onDisablePipeline: () => void;
-  onApprovePipeline: () => void;
-  onRejectPipeline: () => void;
-  tab: Tab;
 }
 
 function formatElapsed(since: number): string {
@@ -31,7 +27,6 @@ function formatElapsed(since: number): string {
 function PipelineStatusBadge({ status }: { status: PipelineStatus }) {
   const [, setTick] = useState(0);
 
-  // Update elapsed time every second
   useEffect(() => {
     const interval = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(interval);
@@ -42,18 +37,11 @@ function PipelineStatusBadge({ status }: { status: PipelineStatus }) {
   switch (status.phase) {
     case 'idle':
       return null;
-    case 'pushing':
-      return (
-        <Badge variant="secondary" className="gap-1">
-          <ArrowUpCircle className="size-3" />
-          Pushing... ({elapsed})
-        </Badge>
-      );
-    case 'waiting':
+    case 'watching':
       return (
         <Badge variant="secondary" className="gap-1">
           <Spinner className="size-3" />
-          CI running... ({elapsed})
+          Watching CI... ({elapsed})
         </Badge>
       );
     case 'passing':
@@ -74,19 +62,12 @@ function PipelineStatusBadge({ status }: { status: PipelineStatus }) {
       return (
         <Badge variant="secondary" className="gap-1">
           <Spinner className="size-3" />
-          Fixing... ({elapsed})
+          Auto-fixing... ({elapsed})
           {status.fixAttempt && (
             <span className="text-muted-foreground">
               ({status.fixAttempt}/{status.maxAttempts})
             </span>
           )}
-        </Badge>
-      );
-    case 'confirming':
-      return (
-        <Badge variant="outline" className="gap-1 border-amber-400 text-amber-600 dark:text-amber-400">
-          <Clock className="size-3" />
-          Awaiting approval
         </Badge>
       );
     case 'error':
@@ -102,34 +83,28 @@ function PipelineStatusBadge({ status }: { status: PipelineStatus }) {
 export function ContextualToolbar({
   worktreeId,
   pipelineStatus,
+  prWatcherStatus,
   onEnablePipeline,
   onDisablePipeline,
-  onApprovePipeline,
-  onRejectPipeline,
 }: ContextualToolbarProps) {
-  const { state } = useSidebar();
-  const sidebarWidth = state === 'collapsed'
-    ? 'var(--sidebar-width-icon)'
-    : 'var(--sidebar-width)';
-
   if (!worktreeId) return null;
 
   const isActive = pipelineStatus && pipelineStatus.phase !== 'idle';
-  const isConfirming = pipelineStatus?.phase === 'confirming';
 
   return (
     <div
       className={cn(
         'flex items-center gap-3 px-4 py-2 border-b border-border bg-muted/30',
-        'transition-[padding-left] duration-200 ease-linear',
       )}
     >
       <div className="flex items-center gap-2">
-        <label htmlFor="pipeline-toggle" className="text-sm font-medium text-muted-foreground whitespace-nowrap">
+        <Eye className="size-3.5 text-muted-foreground" />
+        <label htmlFor="pipeline-toggle" className="text-xs font-medium text-muted-foreground whitespace-nowrap">
           Watch Pipeline
         </label>
         <Switch
           id="pipeline-toggle"
+          size="sm"
           checked={!!isActive}
           onCheckedChange={(checked) => {
             if (checked) onEnablePipeline();
@@ -142,16 +117,39 @@ export function ContextualToolbar({
         <PipelineStatusBadge status={pipelineStatus} />
       )}
 
-      {isConfirming && (
-        <div className="flex items-center gap-2 ml-auto">
-          <span className="text-sm text-muted-foreground">Push fix?</span>
-          <Button size="xs" variant="default" onClick={onApprovePipeline}>
-            Push
-          </Button>
-          <Button size="xs" variant="ghost" onClick={onRejectPipeline}>
-            Cancel
-          </Button>
-        </div>
+      {prWatcherStatus && prWatcherStatus.phase !== 'stopped' && (
+        <>
+          {prWatcherStatus.prNumber && prWatcherStatus.prUrl ? (
+            <a
+              href={prWatcherStatus.prUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="no-underline"
+            >
+              <Badge variant="secondary" className="gap-1 cursor-pointer hover:bg-secondary/80">
+                <GitPullRequest className="size-3" />
+                PR #{prWatcherStatus.prNumber}
+              </Badge>
+            </a>
+          ) : (
+            <Badge variant="secondary" className="gap-1">
+              <GitPullRequest className="size-3" />
+              {prWatcherStatus.message}
+            </Badge>
+          )}
+          {(() => {
+            const newComments = prWatcherStatus.notifications
+              .filter((n) => !n.dismissed && (n.type === 'new_comment' || n.type === 'new_review'))
+              .length;
+            if (newComments === 0) return null;
+            return (
+              <Badge variant="outline" className="gap-1 border-blue-400 text-blue-600 dark:text-blue-400">
+                <MessageSquare className="size-3" />
+                {newComments}
+              </Badge>
+            );
+          })()}
+        </>
       )}
     </div>
   );

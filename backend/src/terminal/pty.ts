@@ -269,20 +269,28 @@ export function setupTerminalWebSocket(server: Server): void {
   });
 }
 
-function handleConnection(ws: WebSocket, worktreeId: string): void {
-  const wt = getWorktree(worktreeId);
+function handleConnection(ws: WebSocket, sessionId: string): void {
+  // Support composite session IDs: "worktreeId::tabName"
+  const baseWorktreeId = sessionId.includes('::') ? sessionId.split('::')[0] : sessionId;
+
+  const wt = getWorktree(baseWorktreeId);
   if (!wt) {
     ws.close(1008, 'Worktree not found');
     return;
   }
 
-  let session = sessions.get(worktreeId);
+  let session = sessions.get(sessionId);
   if (!session) {
+    // Only auto-create sessions for the base worktree, not named tabs
+    if (sessionId !== baseWorktreeId) {
+      ws.close(1008, 'Named session does not exist');
+      return;
+    }
     try {
-      session = createSession(worktreeId, wt.path);
+      session = createSession(sessionId, wt.path);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(`Failed to spawn terminal for worktree ${worktreeId}:`, error);
+      console.error(`Failed to spawn terminal for worktree ${sessionId}:`, error);
       sendSocketError(ws, `Terminal spawn failed: ${message}`);
       ws.close(1011, 'Terminal spawn failed');
       return;
@@ -348,4 +356,81 @@ export function writeToSession(worktreeId: string, text: string): boolean {
   if (!session) return false;
   session.term.write(text);
   return true;
+}
+
+/**
+ * Create a named session (e.g., for autofix tabs).
+ * sessionId format: "worktreeId::tabName"
+ * launchPrompt: if provided, sends this to Claude after boot instead of default interactive mode.
+ */
+export function createNamedSession(sessionId: string, worktreePath: string, launchPrompt?: string): PtySession {
+  // Kill existing session with this ID if present
+  const existing = sessions.get(sessionId);
+  if (existing) {
+    existing.term.kill();
+    sessions.delete(sessionId);
+  }
+
+  if (!existsSync(worktreePath)) {
+    throw new Error(`Worktree path does not exist: ${worktreePath}`);
+  }
+
+  const shell = resolveShell();
+  const term = pty.spawn(shell, [], {
+    name: 'xterm-256color',
+    cols: DEFAULT_TERMINAL_COLS,
+    rows: DEFAULT_TERMINAL_ROWS,
+    cwd: worktreePath,
+    env: getTerminalEnv(),
+  });
+
+  const now = Date.now();
+
+  const session: PtySession = {
+    term,
+    clients: new Set(),
+    status: {
+      state: 'booting',
+      lastActivity: now,
+      stateStartedAt: now,
+    },
+    outputBuffer: '',
+    descriptionGenerated: true, // Don't generate descriptions for autofix sessions
+    worktreePath,
+  };
+  sessions.set(sessionId, session);
+
+  term.onData((data: string) => {
+    broadcastToClients(session, data);
+    const stripped = stripAnsi(data);
+    if (stripped.length > 0) {
+      const now = Date.now();
+      session.status.lastActivity = now;
+      if (session.status.state !== 'active') {
+        session.status.state = 'active';
+        session.status.stateStartedAt = now;
+      }
+    }
+  });
+
+  term.onExit(() => {
+    session.status.state = 'exited';
+    session.status.stateStartedAt = Date.now();
+    sessions.delete(sessionId);
+    for (const client of session.clients) {
+      client.close();
+    }
+  });
+
+  // Launch Claude Code, then send the prompt
+  setTimeout(() => {
+    if (launchPrompt) {
+      // Launch Claude with the prompt wrapped in parens for headless execution
+      term.write(`claude --dangerously-skip-permissions "${launchPrompt.replace(/"/g, '\\"')}"\r`);
+    } else {
+      term.write('claude --dangerously-skip-permissions\r');
+    }
+  }, CLAUDE_BOOT_DELAY_MS);
+
+  return session;
 }

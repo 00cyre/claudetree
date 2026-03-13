@@ -1,7 +1,9 @@
-import { useState, useRef, useCallback } from 'react';
-import type { Project, Worktree, Flag, LinearStatus, AIStatus, SessionStatus, ClaudeActivityState, PipelineStatus } from '@/types';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import type { Project, Worktree, Flag, LinearStatus, AIStatus, SessionStatus, ClaudeActivityState, PipelineStatus, PRWatcherStatus, DevStep } from '@/types';
 import { extractTicketIdFromBranch } from '@/utils/linear';
-import { X, Link2, Folder, CheckCircle2, AlertCircle, Circle, GripVertical, Tag, Plus } from 'lucide-react';
+import { deriveDevStep, reachableSteps } from '@/hooks/useDevStepper';
+import { Stepper, useStepperCtx, stepDefs } from '@/lib/stepper';
+import { X, Link2, Folder, CheckCircle2, AlertCircle, Circle, GripVertical, Tag, Plus, GitPullRequest, Terminal, GitMerge, Check, FileSearch } from 'lucide-react';
 import { GitBranchIcon } from '@/components/ui/git-branch';
 import { PlusIcon } from '@/components/ui/plus';
 import { BotIcon } from '@/components/ui/bot';
@@ -60,19 +62,16 @@ const STATUS_LABEL: Record<ClaudeActivityState, { label: string; className: stri
 };
 
 const PIPELINE_LABEL: Record<string, { label: string; className: string }> = {
-  pushing: { label: 'Pushing...', className: 'text-amber-600 dark:text-amber-400' },
-  waiting: { label: 'CI running...', className: 'text-amber-600 dark:text-amber-400' },
-  passing: { label: 'Pipeline passed', className: 'text-emerald-600 dark:text-emerald-400' },
-  failing: { label: 'Pipeline failed', className: 'text-red-600 dark:text-red-400' },
-  fixing: { label: 'Fixing pipeline...', className: 'text-amber-600 dark:text-amber-400' },
-  confirming: { label: 'Awaiting approval', className: 'text-amber-600 dark:text-amber-400' },
+  watching: { label: 'Watching CI...', className: 'text-amber-600 dark:text-amber-400' },
+  passing: { label: 'CI passed', className: 'text-emerald-600 dark:text-emerald-400' },
+  failing: { label: 'CI failed', className: 'text-red-600 dark:text-red-400' },
+  fixing: { label: 'Auto-fixing...', className: 'text-amber-600 dark:text-amber-400' },
   error: { label: 'Pipeline error', className: 'text-red-600 dark:text-red-400' },
 };
 
 function pipelineDotStyle(phase: string): string {
   switch (phase) {
-    case 'pushing':
-    case 'waiting':
+    case 'watching':
     case 'fixing':
       return 'bg-amber-400 animate-pulse';
     case 'passing':
@@ -80,22 +79,265 @@ function pipelineDotStyle(phase: string): string {
     case 'failing':
     case 'error':
       return 'bg-red-400';
-    case 'confirming':
-      return 'bg-amber-400';
     default:
       return '';
   }
 }
 
-function ActivityLine({ status, pipelineStatus }: { status: SessionStatus; pipelineStatus?: PipelineStatus }) {
+const PR_WATCHER_LABEL: Record<string, { label: string; className: string }> = {
+  discovering: { label: 'Discovering PR...', className: 'text-muted-foreground' },
+  watching: { label: 'Watching PR', className: 'text-blue-600 dark:text-blue-400' },
+  ci_failing: { label: 'PR CI failed', className: 'text-red-600 dark:text-red-400' },
+  fixing: { label: 'Auto-fixing CI...', className: 'text-amber-600 dark:text-amber-400' },
+  pushing_fix: { label: 'Pushing fix...', className: 'text-amber-600 dark:text-amber-400' },
+  no_pr: { label: 'No PR found', className: 'text-muted-foreground' },
+  error: { label: 'PR watcher error', className: 'text-red-600 dark:text-red-400' },
+};
+
+function prWatcherDotStyle(phase: string): string {
+  switch (phase) {
+    case 'discovering':
+    case 'fixing':
+    case 'pushing_fix':
+      return 'bg-amber-400 animate-pulse';
+    case 'watching':
+      return 'bg-blue-400';
+    case 'ci_failing':
+    case 'error':
+      return 'bg-red-400';
+    case 'no_pr':
+      return 'bg-gray-400';
+    default:
+      return '';
+  }
+}
+
+const SIDEBAR_STEP_ICONS: Record<string, React.ReactNode> = {
+  dev: <Terminal className="size-3" />,
+  review: <FileSearch className="size-3" />,
+  pr: <GitPullRequest className="size-3" />,
+  merged: <GitMerge className="size-3" />,
+};
+
+function StepSync({ targetStep }: { targetStep: string }) {
+  const stepper = useStepperCtx();
+  const stepperRef = useRef(stepper);
+  stepperRef.current = stepper;
+  const prevRef = useRef(targetStep);
+
+  useEffect(() => {
+    if (prevRef.current !== targetStep) {
+      prevRef.current = targetStep;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      stepperRef.current.navigation.goTo(targetStep as any);
+    }
+  }, [targetStep]);
+
+  return null;
+}
+
+type StepUrgency = 'action-needed' | 'attention' | 'ready' | 'working' | 'normal';
+
+function computePRUrgency(prWatcherStatus?: PRWatcherStatus): StepUrgency {
+  if (!prWatcherStatus || prWatcherStatus.phase === 'stopped' || prWatcherStatus.phase === 'no_pr') return 'normal';
+
+  // CI failing or changes requested → action needed (red)
+  if (prWatcherStatus.ciStatus === 'failing' || prWatcherStatus.reviewDecision === 'CHANGES_REQUESTED') {
+    return 'action-needed';
+  }
+
+  // CI passing + approved → ready to merge (green)
+  if (prWatcherStatus.ciStatus === 'passing' && prWatcherStatus.reviewDecision === 'APPROVED') {
+    return 'ready';
+  }
+
+  // Undismissed comments/reviews → attention (amber)
+  const hasUndismissed = prWatcherStatus.notifications.some(
+    n => !n.dismissed && (n.type === 'new_comment' || n.type === 'new_review'),
+  );
+  if (hasUndismissed) return 'attention';
+
+  // CI pending or fixing → working
+  if (prWatcherStatus.ciStatus === 'pending' || prWatcherStatus.phase === 'fixing' || prWatcherStatus.phase === 'pushing_fix') {
+    return 'working';
+  }
+
+  return 'normal';
+}
+
+function computeDevUrgency(sessionStatus?: SessionStatus): StepUrgency {
+  if (!sessionStatus) return 'normal';
+  if (sessionStatus.state === 'active' || sessionStatus.state === 'booting') return 'working';
+  if (sessionStatus.state === 'idle') return 'ready';
+  return 'normal';
+}
+
+const URGENCY_INDICATOR: Record<StepUrgency, string> = {
+  'action-needed': 'bg-red-500 text-white shadow-[0_0_6px_rgba(239,68,68,0.4)]',
+  attention: 'bg-amber-500 text-white shadow-[0_0_6px_rgba(245,158,11,0.4)]',
+  ready: 'bg-emerald-500 text-white',
+  working: 'bg-amber-500 text-white animate-pulse',
+  normal: '',
+};
+
+const URGENCY_TITLE: Record<StepUrgency, string> = {
+  'action-needed': 'text-red-500',
+  attention: 'text-amber-500',
+  ready: 'text-emerald-500',
+  working: 'text-amber-500',
+  normal: '',
+};
+
+function SidebarStepper({
+  currentStep,
+  onStepClick,
+  prWatcherStatus,
+  sessionStatus,
+}: {
+  currentStep: DevStep;
+  onStepClick?: (step: DevStep) => void;
+  prWatcherStatus?: PRWatcherStatus;
+  sessionStatus?: SessionStatus;
+}) {
+  const reachable = reachableSteps(prWatcherStatus);
+  const isMerged = currentStep === 'merged';
+
+  const prUrgency = computePRUrgency(prWatcherStatus);
+  const devUrgency = computeDevUrgency(sessionStatus);
+
+  // Per-step urgency map
+  const stepUrgency: Record<string, StepUrgency> = {
+    dev: devUrgency,
+    review: 'normal',
+    pr: prUrgency,
+    merged: 'normal',
+  };
+
+  const currentStepIdx = stepDefs.findIndex(s => s.id === currentStep);
+
+  return (
+    <Stepper.Root orientation="horizontal" initialStep={currentStep as 'dev' | 'pr' | 'merged'}>
+      <StepSync targetStep={currentStep} />
+      <Stepper.List className="flex items-start gap-0 px-1">
+        {stepDefs.map((step, i) => {
+          const stepId = step.id as DevStep;
+          const canNavigate = onStepClick && reachable.has(stepId) && !isMerged;
+          const isSepActive = i < stepDefs.length - 1 && currentStepIdx === i;
+          const urgency = stepUrgency[stepId] ?? 'normal';
+          const hasUrgencyOverride = urgency !== 'normal';
+
+          return (
+            <Stepper.Item
+              key={step.id}
+              step={step.id}
+              className="group/step flex items-start flex-1 last:flex-initial"
+            >
+              <Stepper.Trigger
+                className={cn(
+                  'flex flex-col items-center gap-0.5 transition-opacity',
+                  canNavigate && 'cursor-pointer hover:opacity-80',
+                  !canNavigate && 'cursor-default',
+                )}
+                onClick={() => canNavigate && onStepClick?.(stepId)}
+              >
+                <Stepper.Indicator
+                  className={cn(
+                    'group/ind size-6 rounded-full flex items-center justify-center transition-all',
+                    hasUrgencyOverride
+                      ? URGENCY_INDICATOR[urgency]
+                      : [
+                          'data-[status=active]:bg-blue-500 data-[status=active]:text-white data-[status=active]:shadow-[0_0_6px_rgba(59,130,246,0.4)]',
+                          'data-[status=success]:bg-emerald-500 data-[status=success]:text-white',
+                          'data-[status=inactive]:border data-[status=inactive]:border-muted-foreground/30 data-[status=inactive]:text-muted-foreground',
+                        ],
+                    urgency === 'ready' && stepId === 'pr' && 'stepper-sonar',
+                  )}
+                >
+                  <span className={cn(hasUrgencyOverride ? '' : 'group-data-[status=success]/ind:hidden')}>
+                    {SIDEBAR_STEP_ICONS[step.id]}
+                  </span>
+                  {!hasUrgencyOverride && (
+                    <Check className="size-2.5 hidden group-data-[status=success]/ind:block" strokeWidth={3} />
+                  )}
+                </Stepper.Indicator>
+                <Stepper.Title
+                  className={cn(
+                    'text-[9px] font-medium text-center leading-tight',
+                    hasUrgencyOverride
+                      ? URGENCY_TITLE[urgency]
+                      : 'data-[status=active]:text-blue-500 data-[status=success]:text-emerald-500 data-[status=inactive]:text-muted-foreground',
+                  )}
+                >
+                  {step.title}
+                </Stepper.Title>
+              </Stepper.Trigger>
+              {i < stepDefs.length - 1 && (
+                <Stepper.Separator
+                  className={cn(
+                    'h-0.5 flex-1 mx-1 mt-3 rounded-full',
+                    'data-[status=success]:bg-emerald-500',
+                    'data-[status=inactive]:bg-muted-foreground/20',
+                    isSepActive ? 'stepper-radar' : 'data-[status=active]:bg-muted-foreground/20',
+                  )}
+                />
+              )}
+            </Stepper.Item>
+          );
+        })}
+      </Stepper.List>
+    </Stepper.Root>
+  );
+}
+
+function ActivityLine({ status, pipelineStatus, prWatcherStatus }: { status: SessionStatus; pipelineStatus?: PipelineStatus; prWatcherStatus?: PRWatcherStatus }) {
+  // PRWatcher takes priority when active
+  if (prWatcherStatus && prWatcherStatus.phase !== 'stopped') {
+    const elapsed = formatElapsed(Date.now() - prWatcherStatus.since);
+    const info = PR_WATCHER_LABEL[prWatcherStatus.phase] ?? { label: prWatcherStatus.phase, className: 'text-muted-foreground' };
+
+    const prLabel = prWatcherStatus.prNumber
+      ? `${info.label} #${prWatcherStatus.prNumber}`
+      : info.label;
+
+    // Show new comment count if watching
+    const undismissed = prWatcherStatus.notifications.filter((n) => !n.dismissed);
+    const newComments = undismissed.filter((n) => n.type === 'new_comment' || n.type === 'new_review').length;
+
+    const icon = (() => {
+      switch (prWatcherStatus.phase) {
+        case 'discovering':
+        case 'fixing':
+        case 'pushing_fix':
+          return <Spinner className="size-3" />;
+        case 'watching':
+          return <GitPullRequest className="size-3 shrink-0" />;
+        case 'ci_failing':
+        case 'error':
+          return <AlertCircle className="size-3 shrink-0" />;
+        default:
+          return <Circle className="size-3 shrink-0" />;
+      }
+    })();
+
+    return (
+      <span className={cn('flex items-center gap-1', info.className)}>
+        {icon}
+        <span className="truncate">{prLabel}</span>
+        {newComments > 0 && (
+          <span className="shrink-0 text-blue-500 font-medium">{newComments} new</span>
+        )}
+        <span className="shrink-0 text-muted-foreground">({elapsed})</span>
+      </span>
+    );
+  }
+
   if (pipelineStatus && pipelineStatus.phase !== 'idle') {
     const elapsed = formatElapsed(Date.now() - pipelineStatus.since);
     const info = PIPELINE_LABEL[pipelineStatus.phase] ?? { label: pipelineStatus.phase, className: 'text-muted-foreground' };
 
     const icon = (() => {
       switch (pipelineStatus.phase) {
-        case 'pushing':
-        case 'waiting':
+        case 'watching':
         case 'fixing':
           return <Spinner className="size-3" />;
         case 'passing':
@@ -103,8 +345,6 @@ function ActivityLine({ status, pipelineStatus }: { status: SessionStatus; pipel
         case 'failing':
         case 'error':
           return <AlertCircle className="size-3 shrink-0" />;
-        case 'confirming':
-          return <Spinner className="size-3" />;
         default:
           return <Circle className="size-3 shrink-0" />;
       }
@@ -239,7 +479,10 @@ function WorktreeItem({
   isActive,
   status,
   pipelineStatus,
+  prWatcherStatus,
   allFlags,
+  currentStep,
+  onStepClick,
   onSelect,
   onDelete,
   onSetFlags,
@@ -253,7 +496,10 @@ function WorktreeItem({
   isActive: boolean;
   status?: SessionStatus;
   pipelineStatus?: PipelineStatus;
+  prWatcherStatus?: PRWatcherStatus;
   allFlags: Flag[];
+  currentStep?: DevStep;
+  onStepClick?: (step: DevStep) => void;
   onSelect: () => void;
   onDelete: () => void;
   onSetFlags: (flags: string[]) => void;
@@ -267,6 +513,7 @@ function WorktreeItem({
   const description = status?.description ?? wt.description;
   const wtFlags = wt.flags ?? [];
   const flagDefs = allFlags.filter((f) => wtFlags.includes(f.name));
+  const derivedStep = deriveDevStep(prWatcherStatus);
 
   const toggleFlag = (name: string) => {
     const next = wtFlags.includes(name)
@@ -298,9 +545,11 @@ function WorktreeItem({
             {status && (
               <span className={cn(
                 'size-2 rounded-full shrink-0',
-                pipelineStatus && pipelineStatus.phase !== 'idle'
-                  ? pipelineDotStyle(pipelineStatus.phase)
-                  : STATUS_DOT_STYLES[status.state],
+                prWatcherStatus && prWatcherStatus.phase !== 'stopped'
+                  ? prWatcherDotStyle(prWatcherStatus.phase)
+                  : pipelineStatus && pipelineStatus.phase !== 'idle'
+                    ? pipelineDotStyle(pipelineStatus.phase)
+                    : STATUS_DOT_STYLES[status.state],
               )} />
             )}
             <span className="truncate text-sm leading-tight">{wt.name}</span>
@@ -327,9 +576,17 @@ function WorktreeItem({
           )}
           {status && (
             <div className="text-[10px] leading-tight">
-              <ActivityLine status={status} pipelineStatus={pipelineStatus} />
+              <ActivityLine status={status} pipelineStatus={pipelineStatus} prWatcherStatus={prWatcherStatus} />
             </div>
           )}
+          <div className="mt-1" onClick={(e) => e.stopPropagation()}>
+            <SidebarStepper
+              currentStep={currentStep ?? derivedStep}
+              onStepClick={isActive ? onStepClick : undefined}
+              prWatcherStatus={prWatcherStatus}
+              sessionStatus={status}
+            />
+          </div>
         </div>
       </SidebarMenuButton>
       <div className="absolute right-1 top-1 flex items-center gap-0.5 opacity-0 group-hover/menu-item:opacity-100 transition-opacity">
@@ -393,11 +650,15 @@ export interface SidebarProps {
   onAISetup: () => void;
   statuses: Map<string, SessionStatus>;
   pipelineStatuses: Map<string, PipelineStatus>;
+  prWatcherStatuses: Map<string, PRWatcherStatus>;
   baseBranch: string;
   onBaseBranchChange: (branch: string) => void;
   branches: string[];
   flags: Flag[];
   onCreateFlag: (name: string, color: string) => void;
+  currentStep?: DevStep;
+  onStepChange?: (step: DevStep) => void;
+  stepOverrides?: Map<string, DevStep>;
 }
 
 export function AppSidebar({
@@ -419,11 +680,15 @@ export function AppSidebar({
   onAISetup,
   statuses,
   pipelineStatuses,
+  prWatcherStatuses,
   baseBranch,
   onBaseBranchChange,
   branches,
   flags,
   onCreateFlag,
+  currentStep,
+  onStepChange,
+  stepOverrides,
 }: SidebarProps) {
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
@@ -486,6 +751,18 @@ export function AppSidebar({
                   ))}
                 </SelectContent>
               </Select>
+              <div className="space-y-1">
+                <Select value={baseBranch} onValueChange={onBaseBranchChange}>
+                  <SelectTrigger className="h-7 text-xs">
+                    <SelectValue placeholder="Select branch" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[baseBranch, ...branches.filter((b) => b !== baseBranch)].map((b) => (
+                      <SelectItem key={b} value={b}>{b}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               {onAddProject && (
                 <button
                   onClick={onAddProject}
@@ -495,19 +772,6 @@ export function AppSidebar({
                   <PlusIcon size={16} />
                 </button>
               )}
-            </div>
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium text-muted-foreground px-0.5">Base branch</label>
-              <Select value={baseBranch} onValueChange={onBaseBranchChange}>
-                <SelectTrigger className="h-7 text-xs">
-                  <SelectValue placeholder="Select branch" />
-                </SelectTrigger>
-                <SelectContent>
-                  {branches.map((b) => (
-                    <SelectItem key={b} value={b}>{b}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
           </div>
         )}
@@ -539,7 +803,10 @@ export function AppSidebar({
                       isActive={selectedWorktree?.id === wt.id}
                       status={statuses.get(wt.id)}
                       pipelineStatus={pipelineStatuses.get(wt.id)}
+                      prWatcherStatus={prWatcherStatuses.get(wt.id)}
                       allFlags={flags}
+                      currentStep={selectedWorktree?.id === wt.id ? currentStep : stepOverrides?.get(wt.id)}
+                      onStepClick={selectedWorktree?.id === wt.id ? onStepChange : undefined}
                       onSelect={() => onSelectWorktree(wt)}
                       onDelete={() => onDeleteWorktree(wt.id)}
                       onSetFlags={(f) => onSetWorktreeFlags(wt.id, f)}

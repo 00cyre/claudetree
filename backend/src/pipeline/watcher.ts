@@ -1,18 +1,15 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import simpleGit from 'simple-git';
-import { writeToSession, getAllSessionStatuses } from '../terminal/pty.js';
+import { fetchFailedLogs, sendFixPrompt, watchForIdle } from './ci-fix.js';
 
 const execFileAsync = promisify(execFile);
 
 export type PipelinePhase =
   | 'idle'
-  | 'pushing'
-  | 'waiting'
+  | 'watching'
   | 'passing'
   | 'failing'
   | 'fixing'
-  | 'confirming'
   | 'error';
 
 export interface PipelineStatus {
@@ -22,17 +19,16 @@ export interface PipelineStatus {
   failedChecks?: string[];
   fixAttempt?: number;
   maxAttempts: number;
+  autofixSessionId?: string;
 }
 
 const POLL_INTERVAL_MS = 15_000;
-const MAX_LOG_CHARS = 4000;
 const DEFAULT_MAX_ATTEMPTS = 3;
-const IDLE_CHECK_INTERVAL_MS = 3000;
 
 class PipelineWatcher {
   private status: PipelineStatus;
   private pollInterval: NodeJS.Timeout | null = null;
-  private idleCheckInterval: NodeJS.Timeout | null = null;
+  private idleCleanup: (() => void) | null = null;
   private worktreeId: string;
   private worktreePath: string;
   private branch: string;
@@ -50,18 +46,8 @@ class PipelineWatcher {
     };
   }
 
-  async enable(): Promise<void> {
-    this.setPhase('pushing', 'Pushing branch to origin...');
-
-    try {
-      const git = simpleGit(this.worktreePath);
-      await git.push(['-u', 'origin', this.branch]);
-    } catch (err) {
-      this.setPhase('error', `Push failed: ${err instanceof Error ? err.message : String(err)}`);
-      return;
-    }
-
-    this.setPhase('waiting', 'Waiting for CI checks...');
+  enable(): void {
+    this.setPhase('watching', 'Watching CI checks...');
     this.startPolling();
   }
 
@@ -70,12 +56,12 @@ class PipelineWatcher {
     this.stopIdleCheck();
     this.setPhase('idle', 'Pipeline watcher inactive');
     this.status.fixAttempt = 0;
+    this.status.autofixSessionId = undefined;
   }
 
   private startPolling(): void {
     this.stopPolling();
     this.pollInterval = setInterval(() => this.poll(), POLL_INTERVAL_MS);
-    // Run immediately too
     this.poll();
   }
 
@@ -87,14 +73,14 @@ class PipelineWatcher {
   }
 
   private stopIdleCheck(): void {
-    if (this.idleCheckInterval) {
-      clearInterval(this.idleCheckInterval);
-      this.idleCheckInterval = null;
+    if (this.idleCleanup) {
+      this.idleCleanup();
+      this.idleCleanup = null;
     }
   }
 
   private async poll(): Promise<void> {
-    if (this.status.phase !== 'waiting') return;
+    if (this.status.phase !== 'watching') return;
 
     try {
       const { stdout } = await execFileAsync('gh', [
@@ -112,10 +98,7 @@ class PipelineWatcher {
         event: string;
       }>;
 
-      if (runs.length === 0) {
-        // No runs yet, keep waiting
-        return;
-      }
+      if (runs.length === 0) return;
 
       const run = runs[0];
 
@@ -123,8 +106,6 @@ class PipelineWatcher {
         if (run.conclusion === 'success') {
           this.stopPolling();
           this.setPhase('passing', 'All CI checks passed');
-          // Auto-disable after success
-          setTimeout(() => this.disable(), 5000);
         } else {
           this.stopPolling();
           this.setPhase('failing', `CI check "${run.name}" failed`);
@@ -132,10 +113,9 @@ class PipelineWatcher {
           await this.handleFailure(run.databaseId);
         }
       } else if (run.status === 'in_progress' || run.status === 'queued' || run.status === 'waiting' || run.status === 'pending') {
-        this.setPhase('waiting', `CI running: ${run.name} (${run.status})`);
+        this.setPhase('watching', `CI running: ${run.name} (${run.status})`);
       }
     } catch (err) {
-      // gh CLI might not be available or network issues - keep trying
       console.error(`Pipeline poll error for ${this.worktreeId}:`, err);
     }
   }
@@ -150,58 +130,35 @@ class PipelineWatcher {
       return;
     }
 
-    // Fetch failed logs
-    let logs = '';
-    try {
-      const { stdout } = await execFileAsync('gh', [
-        'run', 'view', String(runId), '--log-failed',
-      ], { cwd: this.worktreePath, maxBuffer: 1024 * 1024 });
-      logs = stdout.slice(0, MAX_LOG_CHARS);
-    } catch (err) {
-      // Try to get at least the error message
-      logs = `Failed to fetch logs: ${err instanceof Error ? err.message : String(err)}`;
-    }
+    const logs = await fetchFailedLogs(this.worktreePath, runId);
 
     if (!logs.trim()) {
       this.setPhase('error', 'CI failed but no logs found');
       return;
     }
 
-    const prompt = `The CI pipeline failed (attempt ${attempt}/${this.status.maxAttempts}). Here are the error logs:\n\n${logs}\n\nPlease fix these issues.`;
-
-    const written = writeToSession(this.worktreeId, prompt + '\r');
-    if (!written) {
-      this.setPhase('error', 'Failed to write fix prompt to terminal session');
+    // Creates a new autofix terminal tab with Claude Code
+    const sessionId = sendFixPrompt(this.worktreeId, logs, attempt, this.status.maxAttempts);
+    if (!sessionId) {
+      this.setPhase('error', 'Failed to create autofix session');
       return;
     }
 
-    this.setPhase('fixing', `Fix attempt ${attempt}/${this.status.maxAttempts} sent to Claude`);
+    this.status.autofixSessionId = sessionId;
+    this.setPhase('fixing', `Fix attempt ${attempt}/${this.status.maxAttempts} — see autofix tab`);
 
-    // Watch for Claude to become idle (finished fixing)
-    this.startIdleWatch();
+    // Watch the autofix session for idle (Claude done fixing)
+    this.startIdleWatch(sessionId);
   }
 
-  private startIdleWatch(): void {
+  private startIdleWatch(sessionId: string): void {
     this.stopIdleCheck();
-    this.idleCheckInterval = setInterval(() => {
-      const statuses = getAllSessionStatuses();
-      const sessionStatus = statuses[this.worktreeId];
-      if (sessionStatus && sessionStatus.state === 'idle') {
-        this.stopIdleCheck();
-        this.setPhase('confirming', 'Claude finished fixing. Push changes?');
-      }
-    }, IDLE_CHECK_INTERVAL_MS);
-  }
-
-  approve(): void {
-    if (this.status.phase !== 'confirming') return;
-    // Re-push and restart the cycle
-    this.enable();
-  }
-
-  reject(): void {
-    if (this.status.phase !== 'confirming') return;
-    this.disable();
+    this.idleCleanup = watchForIdle(sessionId, () => {
+      // Claude finished fixing. Go back to watching CI.
+      // User pushes manually.
+      this.setPhase('watching', 'Autofix complete — push when ready, then CI will re-run');
+      this.startPolling();
+    });
   }
 
   getStatus(): PipelineStatus {
@@ -232,20 +189,6 @@ export function disablePipeline(worktreeId: string): void {
   const watcher = watchers.get(worktreeId);
   if (watcher) {
     watcher.disable();
-  }
-}
-
-export function approvePipeline(worktreeId: string): PipelineStatus | null {
-  const watcher = watchers.get(worktreeId);
-  if (!watcher) return null;
-  watcher.approve();
-  return watcher.getStatus();
-}
-
-export function rejectPipeline(worktreeId: string): void {
-  const watcher = watchers.get(worktreeId);
-  if (watcher) {
-    watcher.reject();
   }
 }
 

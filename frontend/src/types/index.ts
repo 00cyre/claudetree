@@ -164,16 +164,58 @@ export interface BranchDiffResult {
   fileDiffs: Record<string, string>;
 }
 
-export type Tab = 'features' | 'review';
+export type DevStep = 'dev' | 'review' | 'pr' | 'merged';
+
+export interface PRReviewer {
+  login: string;
+  name: string;
+  avatarUrl: string;
+  state: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | 'PENDING' | 'DISMISSED';
+}
+
+export interface PRCheck {
+  name: string;
+  status: string;
+  conclusion: string;
+  detailsUrl?: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+export interface PRCommentDetail {
+  id: string;
+  body: string;
+  author: { login: string; name?: string; avatarUrl?: string };
+  createdAt: string;
+  path?: string;
+  line?: number;
+  diffHunk?: string;
+  reviewState?: string;
+}
+
+export interface PRDetailedData {
+  number: number;
+  url: string;
+  title: string;
+  state: string;
+  baseRefName: string;
+  headRefName: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  reviews: PRReviewer[];
+  checks: PRCheck[];
+  comments: PRCommentDetail[];
+  approvalCount: number;
+  commitCount: number;
+}
 
 export type PipelinePhase =
   | 'idle'
-  | 'pushing'
-  | 'waiting'
+  | 'watching'
   | 'passing'
   | 'failing'
   | 'fixing'
-  | 'confirming'
   | 'error';
 
 export interface PipelineStatus {
@@ -183,4 +225,59 @@ export interface PipelineStatus {
   failedChecks?: string[];
   fixAttempt?: number;
   maxAttempts: number;
+  autofixSessionId?: string;
+}
+
+export type PRNotificationType =
+  | 'ci_failed'
+  | 'ci_passed'
+  | 'autofix_started'
+  | 'autofix_pushed'
+  | 'autofix_failed'
+  | 'new_comment'
+  | 'new_review'
+  | 'pr_closed'
+  | 'pr_merged';
+
+export interface PRNotification {
+  id: string;
+  type: PRNotificationType;
+  message: string;
+  timestamp: number;
+  dismissed: boolean;
+  meta?: Record<string, unknown>;
+}
+
+export type PRWatcherPhase =
+  | 'discovering'
+  | 'watching'
+  | 'ci_failing'
+  | 'fixing'
+  | 'pushing_fix'
+  | 'no_pr'
+  | 'stopped'
+  | 'error';
+
+export type PRReviewDecision = 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED';
+export type PRCIStatus = 'passing' | 'failing' | 'pending';
+
+export interface PRMergedMeta {
+  mergedBy: string;
+  mergedAt: string;
+  baseBranch: string;
+  commitCount: number;
+}
+
+export interface PRWatcherStatus {
+  phase: PRWatcherPhase;
+  message: string;
+  since: number;
+  prNumber?: number;
+  prUrl?: string;
+  prTitle?: string;
+  fixAttempt: number;
+  maxAttempts: number;
+  notifications: PRNotification[];
+  reviewDecision?: PRReviewDecision;
+  ciStatus?: PRCIStatus;
 }

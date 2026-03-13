@@ -199,6 +199,19 @@ export function removeFlag(name: string): void {
   }
 }
 
+export function ensureDefaultFlags(): void {
+  const defaults: Flag[] = [
+    { name: 'PR OPEN', color: '#3b82f6' },
+    { name: 'Blocked', color: '#ef4444' },
+    { name: 'Ready for Review', color: '#22c55e' },
+  ];
+  const existing = getFlags();
+  if (existing.length > 0) return;
+  for (const flag of defaults) {
+    addFlag(flag);
+  }
+}
+
 export function getWorktreeOrder(projectId: string): string[] {
   return loadConfig().worktreeOrder?.[projectId] ?? [];
 }

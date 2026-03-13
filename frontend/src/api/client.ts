@@ -1,4 +1,4 @@
-import type { Project, Worktree, DiffResult, FileDiff, LinearIssue, LinearComment, LinearStatus, AIStatus, FileAnalysis, FileDetailedAnalysis, TicketContext, PipelineStatus, BranchDiffResult, NarrativeAnalysis, Flag } from '../types/index.js';
+import type { Project, Worktree, DiffResult, FileDiff, LinearIssue, LinearComment, LinearStatus, AIStatus, FileAnalysis, FileDetailedAnalysis, TicketContext, PipelineStatus, PRWatcherStatus, BranchDiffResult, NarrativeAnalysis, Flag, PRDetailedData } from '../types/index.js';
 
 const BASE = '/api';
 
@@ -112,12 +112,6 @@ export const api = {
   disablePipeline: (worktreeId: string) =>
     request<{ ok: boolean }>(`/pipeline/${worktreeId}/disable`, { method: 'POST' }),
 
-  approvePipeline: (worktreeId: string) =>
-    request<{ status: PipelineStatus }>(`/pipeline/${worktreeId}/approve`, { method: 'POST' }),
-
-  rejectPipeline: (worktreeId: string) =>
-    request<{ ok: boolean }>(`/pipeline/${worktreeId}/reject`, { method: 'POST' }),
-
   sendTerminalCommand: (worktreeId: string, text: string) =>
     request<{ ok: boolean }>(`/terminal/${worktreeId}/write`, {
       method: 'POST',
@@ -151,4 +145,16 @@ export const api = {
     request<{ ok: boolean }>(`/worktrees/meta/flags/${encodeURIComponent(name)}`, {
       method: 'DELETE',
     }),
+
+  // PR Watcher
+  getPRWatcherStatus: (worktreeId: string) =>
+    request<PRWatcherStatus | null>(`/pr-watcher/${worktreeId}`),
+
+  dismissPRNotification: (worktreeId: string, notificationId: string) =>
+    request<{ ok: boolean }>(`/pr-watcher/${worktreeId}/dismiss/${notificationId}`, {
+      method: 'POST',
+    }),
+
+  getPRDetails: (worktreeId: string) =>
+    request<PRDetailedData>(`/pr-watcher/${worktreeId}/details`),
 };

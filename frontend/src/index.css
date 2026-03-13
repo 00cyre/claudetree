@@ -86,3 +86,25 @@
     @apply font-sans;
   }
 }
+
+/* Stepper animations */
+@keyframes radar-scan {
+  0% { background-position: -100% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes sonar-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5); }
+  50% { box-shadow: 0 0 0 4px rgba(34, 197, 94, 0); }
+}
+
+.stepper-radar {
+  background: linear-gradient(90deg, transparent 0%, rgba(59, 130, 246, 0.6) 50%, transparent 100%);
+  background-size: 50% 100%;
+  background-repeat: no-repeat;
+  animation: radar-scan 2s ease-in-out infinite;
+}
+
+.stepper-sonar {
+  animation: sonar-pulse 2s ease-in-out infinite;
+}
