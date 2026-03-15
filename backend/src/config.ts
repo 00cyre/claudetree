@@ -10,7 +10,7 @@ const INSTANCE_NAME = basename(process.env.CLAUDETREE_PROJECT_ROOT || process.cw
 const INSTANCE_DIR = join(CONFIG_DIR, 'instances', INSTANCE_NAME);
 const INSTANCE_FILE = join(INSTANCE_DIR, 'config.json');
 
-const API_KEYS = ['linearApiKey', 'anthropicApiKey'] as const;
+const API_KEYS = ['linearApiKey', 'anthropicApiKey', 'anthropicModel'] as const;
 
 export function getInstanceName(): string {
   return INSTANCE_NAME;
@@ -43,6 +43,7 @@ export interface AppConfig {
   projects: Project[];
   linearApiKey?: string;
   anthropicApiKey?: string;
+  anthropicModel?: string;
   worktreeLinks?: Record<string, WorktreeLink>;
   flags?: Flag[];
   worktreeOrder?: Record<string, string[]>;
@@ -51,12 +52,14 @@ export interface AppConfig {
 interface SharedConfig {
   linearApiKey?: string;
   anthropicApiKey?: string;
+  anthropicModel?: string;
 }
 
 interface InstanceConfig {
   projects: Project[];
   linearApiKey?: string;
   anthropicApiKey?: string;
+  anthropicModel?: string;
   worktreeLinks?: Record<string, WorktreeLink>;
   flags?: Flag[];
   worktreeOrder?: Record<string, string[]>;
@@ -123,6 +126,7 @@ export function loadConfig(): AppConfig {
     projects: instance.projects || [],
     linearApiKey: instance.linearApiKey || shared.linearApiKey,
     anthropicApiKey: instance.anthropicApiKey || shared.anthropicApiKey,
+    anthropicModel: instance.anthropicModel || shared.anthropicModel,
     worktreeLinks: instance.worktreeLinks,
     flags: instance.flags,
     worktreeOrder: instance.worktreeOrder,

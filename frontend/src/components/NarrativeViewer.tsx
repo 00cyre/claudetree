@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { NarrativeAnalysis, NarrativePhase, NarrativeStep, TicketContext } from '@/types';
 import { api } from '@/api/client';
 import { ChainOfThought } from '@/components/ChainOfThought';
@@ -47,11 +47,7 @@ export function NarrativeViewer({ worktreeId, baseBranch, aiConnected, ticketCon
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const activeKeyRef = useRef<string | null>(null);
-  const inflightKeyRef = useRef<string | null>(null);
-
   const cacheKey = `${worktreeId}:${baseBranch}`;
-  activeKeyRef.current = cacheKey;
 
   // When the worktree/branch changes, immediately show persisted result or clear stale state
   useEffect(() => {
@@ -69,10 +65,8 @@ export function NarrativeViewer({ worktreeId, baseBranch, aiConnected, ticketCon
   // Fetch narrative — sends cached fingerprint so the backend can short-circuit
   useEffect(() => {
     if (!worktreeId || !aiConnected) return;
-    if (inflightKeyRef.current === cacheKey) return;
 
     let cancelled = false;
-    inflightKeyRef.current = cacheKey;
 
     const persisted = loadFromStorage(cacheKey);
     // Only show loading spinner if we have nothing to display yet
@@ -85,31 +79,32 @@ export function NarrativeViewer({ worktreeId, baseBranch, aiConnected, ticketCon
 
     api.analyzeNarrative(worktreeId, baseBranch, ticketContext, cachedFingerprint)
       .then((result) => {
-        if (cancelled || activeKeyRef.current !== cacheKey) return;
+        if (cancelled) return;
 
         if (result.cached) {
-          // Backend confirmed our cached version is still current — nothing to update
-          setLoading(false);
-          return;
+          if (persisted) return;
+          // localStorage was cleared but server thinks we have it — re-fetch fresh
+          return api.analyzeNarrative(worktreeId, baseBranch, ticketContext)
+            .then((fresh) => {
+              if (!cancelled) {
+                saveToStorage(cacheKey, fresh);
+                setNarrative(fresh);
+              }
+            });
         }
 
         saveToStorage(cacheKey, result);
         setNarrative(result);
       })
       .catch((err) => {
+        if (cancelled) return;
         console.error('Narrative analysis failed:', err);
-        inflightKeyRef.current = null;
-        if (!cancelled && activeKeyRef.current === cacheKey) {
-          // Only show error if we have nothing cached to display
-          if (!persisted) {
-            setError(err instanceof Error ? err.message : String(err));
-          }
+        if (!persisted) {
+          setError(err instanceof Error ? err.message : String(err));
         }
       })
       .finally(() => {
-        if (!cancelled && activeKeyRef.current === cacheKey) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       });
 
     return () => { cancelled = true; };
@@ -151,23 +146,21 @@ export function NarrativeViewer({ worktreeId, baseBranch, aiConnected, ticketCon
         <button
           className="text-xs text-primary hover:underline cursor-pointer"
           onClick={() => {
-            inflightKeyRef.current = null;
             removeFromStorage(cacheKey);
             setError(null);
             setLoading(true);
             api.analyzeNarrative(worktreeId, baseBranch, ticketContext)
               .then((result) => {
-                if (activeKeyRef.current !== cacheKey) return;
                 if (!result.cached) {
                   saveToStorage(cacheKey, result);
                   setNarrative(result);
                 }
               })
               .catch((err) => {
-                if (activeKeyRef.current === cacheKey) setError(err instanceof Error ? err.message : String(err));
+                setError(err instanceof Error ? err.message : String(err));
               })
               .finally(() => {
-                if (activeKeyRef.current === cacheKey) setLoading(false);
+                setLoading(false);
               });
           }}
         >
@@ -356,8 +349,8 @@ function NarrativeLoadingSkeleton() {
       <div className="flex items-center gap-3">
         <Loader2 className="h-5 w-5 animate-spin text-primary" />
         <div>
-          <p className="text-sm font-medium text-foreground">Analyzing all branch changes...</p>
-          <p className="text-xs text-muted-foreground mt-0.5">Building a narrative across all files</p>
+          <p className="text-sm font-medium text-foreground">Analyzing branch changes...</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Organizing files into phases, then analyzing each in parallel</p>
         </div>
       </div>
 
@@ -366,7 +359,7 @@ function NarrativeLoadingSkeleton() {
           <div className="h-4 bg-muted rounded w-1/4" />
         </div>
         <div className="px-4 pb-4 space-y-4">
-          {[1, 2, 3, 4].map((i) => (
+          {[1, 2, 3].map((i) => (
             <div key={i} className="space-y-2 pl-6">
               <div className="h-3.5 bg-muted rounded w-2/5" />
               <div className="h-3 bg-muted/70 rounded w-3/5" />

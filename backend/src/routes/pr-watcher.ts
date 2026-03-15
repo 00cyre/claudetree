@@ -5,6 +5,7 @@ import {
   dismissPRNotification,
   getPRDetailedData,
   fetchPRDetailsOnDemand,
+  enablePRWatcher,
 } from '../pipeline/pr-watcher.js';
 
 const router = Router();
@@ -31,6 +32,10 @@ router.get('/:worktreeId/details', async (req: Request, res: Response) => {
   let data = await getPRDetailedData(worktreeId);
   if (!data) {
     data = await fetchPRDetailsOnDemand(wt.path, wt.branch);
+    // Start a watcher so SSE picks up status (reviews, CI, etc.)
+    if (data) {
+      enablePRWatcher(worktreeId, wt.path, wt.branch);
+    }
   }
   if (!data) {
     res.status(404).json({ error: 'No PR found for this branch' });

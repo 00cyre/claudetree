@@ -224,7 +224,7 @@ router.post('/:worktreeId/analyze', async (req: Request, res: Response) => {
       return;
     }
 
-    const result = await analyzeChanges(config.anthropicApiKey, withDiffs, ticketContext);
+    const result = await analyzeChanges(config.anthropicApiKey, withDiffs, ticketContext, config.anthropicModel);
     changesCache.set(cacheKey, { result, timestamp: Date.now() });
     saveAggregateAnalysis(req.params.worktreeId, cacheKey, result);
     res.json(result);
@@ -326,7 +326,7 @@ router.post('/:worktreeId/narrative', async (req: Request, res: Response) => {
       ticketContext?.id ?? '',
     ]);
 
-    const result = await analyzeNarrative(config.anthropicApiKey, withDiffs, ticketContext);
+    const result = await analyzeNarrative(config.anthropicApiKey, withDiffs, ticketContext, config.anthropicModel);
     narrativeCache.set(fingerprint, { result, timestamp: Date.now() });
     saveNarrativeWithFingerprint(req.params.worktreeId, fingerprint, contentHash, result);
     res.json({ ...result, fingerprint });
@@ -368,7 +368,7 @@ router.post('/:worktreeId/:file/analyze', async (req: Request, res: Response) =>
       return;
     }
 
-    const result = await analyzeFileDetailed(config.anthropicApiKey, file, diff, ticketContext);
+    const result = await analyzeFileDetailed(config.anthropicApiKey, file, diff, ticketContext, config.anthropicModel);
     fileCache.set(cacheKey, { result, timestamp: Date.now() });
     saveFileAnalysis(req.params.worktreeId, file, cacheKey, result);
     res.json(result);

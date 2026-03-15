@@ -53,8 +53,8 @@ export interface PRWatcherStatus {
   ciStatus?: PRCIStatus;
 }
 
-const POLL_INTERVAL_MS = 60_000;
-const NO_PR_POLL_INTERVAL_MS = 120_000;
+const POLL_INTERVAL_MS = 300_000; // 5 minutes — avoid burning GitHub API rate limits
+const NO_PR_POLL_INTERVAL_MS = 600_000; // 10 minutes
 const DEFAULT_MAX_ATTEMPTS = 3;
 
 let notifCounter = 0;

@@ -22,7 +22,7 @@ export interface PipelineStatus {
   autofixSessionId?: string;
 }
 
-const POLL_INTERVAL_MS = 15_000;
+const POLL_INTERVAL_MS = 120_000; // 2 minutes — avoid burning GitHub API rate limits
 const DEFAULT_MAX_ATTEMPTS = 3;
 
 class PipelineWatcher {

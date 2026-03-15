@@ -248,6 +248,13 @@ export interface PRNotification {
   meta?: Record<string, unknown>;
 }
 
+export type AttentionColor = 'amber' | 'emerald';
+export interface AttentionState {
+  color: AttentionColor;
+  reason: string;
+  timestamp: number;
+}
+
 export type PRWatcherPhase =
   | 'discovering'
   | 'watching'

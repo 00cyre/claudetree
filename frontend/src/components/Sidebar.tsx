@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import type { Project, Worktree, Flag, LinearStatus, AIStatus, SessionStatus, ClaudeActivityState, PipelineStatus, PRWatcherStatus, DevStep } from '@/types';
+import type { Project, Worktree, Flag, LinearStatus, AIStatus, SessionStatus, ClaudeActivityState, PipelineStatus, PRWatcherStatus, DevStep, AttentionState } from '@/types';
 import { extractTicketIdFromBranch } from '@/utils/linear';
 import { deriveDevStep, reachableSteps } from '@/hooks/useDevStepper';
 import { Stepper, useStepperCtx, stepDefs } from '@/lib/stepper';
@@ -485,6 +485,7 @@ function WorktreeItem({
   prWatcherStatus,
   allFlags,
   currentStep,
+  attention,
   onStepClick,
   onSelect,
   onDelete,
@@ -502,6 +503,7 @@ function WorktreeItem({
   prWatcherStatus?: PRWatcherStatus;
   allFlags: Flag[];
   currentStep?: DevStep;
+  attention?: AttentionState;
   onStepClick?: (step: DevStep) => void;
   onSelect: () => void;
   onDelete: () => void;
@@ -527,6 +529,10 @@ function WorktreeItem({
 
   return (
     <SidebarMenuItem
+      className={cn(
+        attention?.color === 'amber' && 'card-attention-amber rounded-md',
+        attention?.color === 'emerald' && 'card-attention-emerald rounded-md',
+      )}
       draggable
       onDragStart={onDragStart}
       onDragOver={onDragOver}
@@ -669,6 +675,8 @@ export interface SidebarProps {
   currentStep?: DevStep;
   onStepChange?: (step: DevStep) => void;
   stepOverrides?: Map<string, DevStep>;
+  attention?: Map<string, AttentionState>;
+  onClearAttention?: (id: string) => void;
 }
 
 export function AppSidebar({
@@ -699,6 +707,8 @@ export function AppSidebar({
   currentStep,
   onStepChange,
   stepOverrides,
+  attention,
+  onClearAttention,
 }: SidebarProps) {
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
@@ -816,8 +826,9 @@ export function AppSidebar({
                       prWatcherStatus={prWatcherStatuses.get(wt.id)}
                       allFlags={flags}
                       currentStep={selectedWorktree?.id === wt.id ? currentStep : stepOverrides?.get(wt.id)}
+                      attention={attention?.get(wt.id)}
                       onStepClick={selectedWorktree?.id === wt.id ? onStepChange : undefined}
-                      onSelect={() => onSelectWorktree(wt)}
+                      onSelect={() => { onClearAttention?.(wt.id); onSelectWorktree(wt); }}
                       onDelete={() => onDeleteWorktree(wt.id)}
                       onSetFlags={(f) => onSetWorktreeFlags(wt.id, f)}
                       onCreateFlag={onCreateFlag}

@@ -18,19 +18,89 @@ interface TicketContext {
   description?: string;
 }
 
+export const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
+
 function isOAuthToken(key: string): boolean {
   return key.startsWith('sk-ant-oat');
 }
 
 function createClient(key: string): Anthropic {
+  const timeout = 10 * 60 * 1000; // 10 minutes
   if (isOAuthToken(key)) {
     return new Anthropic({
       authToken: key,
       apiKey: null,
-      defaultHeaders: { 'anthropic-beta': 'oauth-2025-04-20' },
+      timeout,
+      defaultHeaders: { 'anthropic-beta': 'oauth-2025-04-20,output-128k-2025-02-19' },
     });
   }
-  return new Anthropic({ apiKey: key });
+  return new Anthropic({
+    apiKey: key,
+    timeout,
+    defaultHeaders: { 'anthropic-beta': 'output-128k-2025-02-19' },
+  });
+}
+
+/**
+ * Stream a message and return the full text content.
+ * Required for large max_tokens values where the SDK enforces streaming.
+ */
+async function streamMessage(
+  client: Anthropic,
+  params: Anthropic.MessageCreateParamsNonStreaming,
+): Promise<string> {
+  const stream = client.messages.stream({ ...params, stream: true });
+  const response = await stream.finalMessage();
+  return response.content
+    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+    .map((b) => b.text)
+    .join('');
+}
+
+/**
+ * Attempt to parse JSON, repairing common truncation issues from AI output.
+ * Tries raw parse first, then attempts to close unclosed brackets/braces.
+ */
+function parseJsonLenient(text: string): unknown {
+  // First try direct parse
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('AI returned no valid JSON');
+
+  let json = jsonMatch[0];
+  try {
+    return JSON.parse(json);
+  } catch {
+    // AI output was likely truncated — try to repair
+  }
+
+  // Strip trailing partial strings (unmatched quotes)
+  json = json.replace(/,\s*"[^"]*$/, '');
+
+  // Close unclosed brackets and braces
+  const opens: string[] = [];
+  let inString = false;
+  let escape = false;
+  for (const ch of json) {
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{' || ch === '[') opens.push(ch);
+    else if (ch === '}' || ch === ']') opens.pop();
+  }
+
+  // If we're inside a string, close it
+  if (inString) json += '"';
+
+  // Close all unclosed structures
+  while (opens.length > 0) {
+    const open = opens.pop();
+    // Remove trailing comma before closing
+    json = json.replace(/,\s*$/, '');
+    json += open === '{' ? '}' : ']';
+  }
+
+  return JSON.parse(json);
 }
 
 const SYSTEM_PROMPT = `You analyze code changes in a git worktree. Given a list of changed files and their diffs, you must:
@@ -60,6 +130,7 @@ export async function analyzeChanges(
   apiKey: string,
   fileDiffs: FileDiff[],
   ticketContext?: TicketContext,
+  model?: string,
 ): Promise<AnalysisResult> {
   if (fileDiffs.length === 0) {
     return { sortOrder: [], explanations: {}, summary: 'No changes.' };
@@ -76,9 +147,9 @@ export async function analyzeChanges(
     ticketSection = `\n\nThis work is for ticket **${ticketContext.id}: ${ticketContext.title}**.${ticketContext.description ? `\n\nTicket description:\n${ticketContext.description.slice(0, 2000)}` : ''}\n\nRelate your explanations to this ticket — explain how each file's changes contribute to the ticket's goal.\n\n`;
   }
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 2048,
+  const text = await streamMessage(client, {
+    model: model || DEFAULT_MODEL,
+    max_tokens: 64_000,
     system: SYSTEM_PROMPT,
     messages: [
       {
@@ -88,17 +159,7 @@ export async function analyzeChanges(
     ],
   });
 
-  const text = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map((b) => b.text)
-    .join('');
-
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error('AI returned no valid JSON');
-  }
-
-  const parsed = JSON.parse(jsonMatch[0]) as AnalysisResult;
+  const parsed = parseJsonLenient(text) as AnalysisResult;
 
   const fileSet = new Set(fileDiffs.map((f) => f.file));
   const sortOrder = (parsed.sortOrder ?? []).filter((f) => fileSet.has(f));
@@ -168,6 +229,7 @@ export async function analyzeFileDetailed(
   file: string,
   diff: string,
   ticketContext?: TicketContext,
+  model?: string,
 ): Promise<FileDetailedAnalysis> {
   if (!diff.trim()) {
     return { file, overview: 'No changes.', steps: [] };
@@ -180,9 +242,9 @@ export async function analyzeFileDetailed(
     ticketSection = `This work is for ticket **${ticketContext.id}: ${ticketContext.title}**.${ticketContext.description ? `\nTicket description: ${ticketContext.description.slice(0, 1000)}` : ''}\nRelate your explanations to the ticket's goal.\n\n`;
   }
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 2048,
+  const text = await streamMessage(client, {
+    model: model || DEFAULT_MODEL,
+    max_tokens: 64_000,
     system: FILE_ANALYSIS_PROMPT,
     messages: [
       {
@@ -192,17 +254,7 @@ export async function analyzeFileDetailed(
     ],
   });
 
-  const text = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map((b) => b.text)
-    .join('');
-
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error('AI returned no valid JSON');
-  }
-
-  const parsed = JSON.parse(jsonMatch[0]) as { overview?: string; steps?: HunkExplanation[] };
+  const parsed = parseJsonLenient(text) as { overview?: string; steps?: HunkExplanation[] };
 
   return {
     file,
@@ -248,59 +300,77 @@ export interface NarrativeAnalysis {
   ticketCorrelation?: TicketCorrelation;
 }
 
-const NARRATIVE_PROMPT = `You analyze ALL code changes across an entire feature branch compared to its base branch. Given diffs for every changed file (with hunks numbered), you must produce a unified narrative that explains the changes as a coherent story.
+// --- Two-stage narrative pipeline: outline + parallel phase details ---
 
-Each file's diff is split into numbered hunks (hunk 0, hunk 1, etc.). Each hunk represents a distinct section of changes in that file.
+const NARRATIVE_OUTLINE_PROMPT = `You organize code changes into a logical narrative structure. Given a list of changed files with brief change previews and statistics, you must:
 
-Group changes into logical phases. Good phase names include: "Schema & Data Layer", "Business Logic", "API Routes", "UI Components", "Tests", "Configuration", etc. Use whatever groupings make sense for the actual changes.
+1. Group files into logical phases (e.g., "Schema & Data Layer", "Business Logic", "API Routes", "UI Components", "Tests", "Configuration")
+2. Within each phase, create steps that cover groups of related files
+3. Assign each file to exactly one step
 
-Each phase should also have a "labels" array of short tags that categorize the nature of the changes (e.g. "bug fix", "refactor", "new feature", "performance", "security", "breaking change", "config", "tests", "types", "cleanup"). Use as many labels as are relevant — one or more per phase.
-
-Within each phase, create steps that explain WHAT changed and WHY. Each step should:
-- Have a clear, concise title (3-10 words)
-- Have a description explaining the purpose of this change
-- Reference specific files AND which hunks from each file are relevant to THIS step
-- Optionally reference connections to other steps (by step ID) when changes in one step depend on or relate to changes in another
+Focus ONLY on structure and organization. Detailed descriptions will be added in a separate pass.
 
 IMPORTANT:
-- Every changed file (and every hunk within it) MUST appear in at least one step
-- When a file has multiple hunks, different steps can reference different hunks of the same file
-- Step IDs must be unique strings (use kebab-case like "add-credit-enum", "update-api-handler")
-- Connection references must be valid step IDs
-- Cross-file relationships are critical — show WHY a change in file A required changes in files B, C, D
-- If ticket context is provided, you MUST include a "ticketCorrelation" object that ties the changes back to the ticket
+- Every file MUST appear in exactly one step
+- Step IDs must be unique kebab-case strings
+- Labels: "bug fix", "refactor", "new feature", "performance", "security", "breaking change", "config", "tests", "types", "cleanup"
 
-Return ONLY valid JSON matching this structure:
+Return ONLY valid JSON:
 {
   "summary": "2-3 sentence overview of all changes",
   "phases": [
     {
       "title": "Phase Name",
-      "labels": ["bug fix", "performance"],
-      "description": "What this phase accomplishes",
+      "labels": ["new feature"],
+      "description": "Brief description of what this phase accomplishes",
       "steps": [
         {
           "id": "unique-step-id",
-          "title": "Short step title",
-          "description": "Why this change was made and what it does",
-          "files": [
-            { "file": "path/to/file.ts", "hunks": [0, 1] },
-            { "file": "path/to/other.ts", "hunks": [0] }
-          ],
-          "connections": ["other-step-id"]
+          "title": "Short step title (3-10 words)",
+          "files": ["path/to/file1.ts", "path/to/file2.ts"]
         }
       ]
     }
   ],
   "ticketCorrelation": {
     "ticketId": "TICKET-123",
-    "ticketTitle": "The ticket title",
-    "correlation": "Explain how the overall set of changes directly relates to the reported issue or feature request described in the ticket. Reference specific parts of the ticket description.",
-    "resolution": "Explain concretely how these changes fix or address the issue. What was broken/missing before, and what does this changeset do to resolve it."
+    "ticketTitle": "Title",
+    "correlation": "How changes relate to ticket",
+    "resolution": "How changes resolve the issue"
   }
 }
 
-The "ticketCorrelation" field is REQUIRED when ticket context is provided. It should be a thoughtful analysis — not just restating the ticket, but showing exactly which changes map to which parts of the reported issue and how they resolve it.`;
+The "ticketCorrelation" field is REQUIRED when ticket context is provided.`;
+
+const PHASE_DETAIL_PROMPT = `You analyze code changes for one phase of a code review narrative. You are given:
+1. The phase title and step outline (step IDs, titles, and assigned files)
+2. Full diffs for all files in this phase, with hunks numbered
+3. A list of all step IDs across ALL phases (for cross-phase connections)
+
+For each step, you must:
+- Write a description (1-3 sentences) explaining WHAT changed and WHY
+- For each file, identify which specific hunks are relevant to this step
+- Identify connections to other steps when changes are related
+
+Return ONLY valid JSON:
+{
+  "steps": [
+    {
+      "id": "existing-step-id",
+      "description": "Detailed description of what this change does and why",
+      "files": [
+        { "file": "path/to/file.ts", "hunks": [0, 2] }
+      ],
+      "connections": ["other-step-id"]
+    }
+  ]
+}
+
+Rules:
+- Use the EXACT step IDs from the outline
+- Hunks are zero-indexed
+- Only add connections when changes are genuinely dependent or related
+- Connections can reference step IDs from other phases`;
 
 // Parse a unified diff into hunks (split on @@ markers)
 interface ParsedHunk {
@@ -334,10 +404,291 @@ function reassembleDiff(file: string, hunks: ParsedHunk[]): string {
   return `${header}\n${hunks.map((h) => h.lines.join('\n')).join('\n')}`;
 }
 
+// --- Stage 1: Outline (fast call with abbreviated diffs) ---
+
+interface OutlineStep {
+  id: string;
+  title: string;
+  files: string[];
+}
+
+interface OutlinePhase {
+  title: string;
+  labels: string[];
+  description: string;
+  steps: OutlineStep[];
+}
+
+interface NarrativeOutline {
+  summary: string;
+  phases: OutlinePhase[];
+  ticketCorrelation?: TicketCorrelation;
+}
+
+function buildFilePreview(fd: FileDiff): string {
+  const lines = fd.diff.split('\n');
+  let adds = 0, dels = 0;
+  const hunkHeaders: string[] = [];
+  for (const l of lines) {
+    if (l.startsWith('+') && !l.startsWith('+++')) adds++;
+    else if (l.startsWith('-') && !l.startsWith('---')) dels++;
+    else if (l.startsWith('@@')) hunkHeaders.push(l);
+  }
+  // Show hunk headers for function/class context
+  const hunkPreview = hunkHeaders.length > 0
+    ? `\nRegions: ${hunkHeaders.slice(0, 6).join(' | ')}`
+    : '';
+  // First 10 change lines as a preview
+  const changeLines = lines
+    .filter(l => (l.startsWith('+') && !l.startsWith('+++')) || (l.startsWith('-') && !l.startsWith('---')))
+    .slice(0, 10)
+    .join('\n');
+  return `### ${fd.file} (+${adds}/-${dels}, ${hunkHeaders.length} hunks)${hunkPreview}\n\`\`\`\n${changeLines.slice(0, 400)}\n\`\`\``;
+}
+
+async function getNarrativeOutline(
+  client: Anthropic,
+  fileDiffs: FileDiff[],
+  ticketContext?: TicketContext,
+  model?: string,
+): Promise<NarrativeOutline> {
+  const fileDescriptions = fileDiffs.map(buildFilePreview).join('\n\n');
+
+  let ticketSection = '';
+  if (ticketContext) {
+    ticketSection = `\n\nThis work is for ticket **${ticketContext.id}: ${ticketContext.title}**.${ticketContext.description ? `\nTicket description: ${ticketContext.description.slice(0, 1500)}` : ''}\n\n`;
+  }
+
+  const text = await streamMessage(client, {
+    model: model || DEFAULT_MODEL,
+    max_tokens: 64_000,
+    system: NARRATIVE_OUTLINE_PROMPT,
+    messages: [{
+      role: 'user',
+      content: `${ticketSection}Organize these ${fileDiffs.length} changed files into a narrative structure:\n\n${fileDescriptions}`,
+    }],
+  });
+
+  const parsed = parseJsonLenient(text) as {
+    summary?: string;
+    phases?: {
+      title?: string;
+      labels?: string[];
+      description?: string;
+      steps?: { id?: string; title?: string; files?: string[] }[];
+    }[];
+    ticketCorrelation?: {
+      ticketId?: string;
+      ticketTitle?: string;
+      correlation?: string;
+      resolution?: string;
+    };
+  };
+
+  const allFiles = new Set(fileDiffs.map(f => f.file));
+
+  const phases: OutlinePhase[] = (parsed.phases ?? []).map((p, pi) => ({
+    title: p.title ?? `Phase ${pi + 1}`,
+    labels: (p.labels ?? []).filter(l => typeof l === 'string' && l.trim()),
+    description: p.description ?? '',
+    steps: (p.steps ?? []).map((s, si) => ({
+      id: s.id || `phase-${pi}-step-${si}`,
+      title: s.title ?? `Step ${si + 1}`,
+      files: (s.files ?? []).filter(f => allFiles.has(f)),
+    })),
+  }));
+
+  // Ensure every file is assigned to at least one step
+  const assignedFiles = new Set(phases.flatMap(p => p.steps.flatMap(s => s.files)));
+  const unassigned = [...allFiles].filter(f => !assignedFiles.has(f));
+  if (unassigned.length > 0) {
+    phases.push({
+      title: 'Other Changes',
+      labels: [],
+      description: 'Additional files that were modified',
+      steps: unassigned.map((f, i) => ({
+        id: `other-${i}`,
+        title: f.split('/').pop() ?? f,
+        files: [f],
+      })),
+    });
+  }
+
+  let ticketCorrelation: TicketCorrelation | undefined;
+  if (parsed.ticketCorrelation && ticketContext) {
+    const tc = parsed.ticketCorrelation;
+    if (tc.correlation || tc.resolution) {
+      ticketCorrelation = {
+        ticketId: ticketContext.id,
+        ticketTitle: ticketContext.title,
+        correlation: tc.correlation ?? '',
+        resolution: tc.resolution ?? '',
+      };
+    }
+  }
+
+  return { summary: parsed.summary ?? '', phases, ticketCorrelation };
+}
+
+// --- Stage 2: Per-phase details (parallel calls with full diffs) ---
+
+async function getPhaseDetails(
+  client: Anthropic,
+  phase: OutlinePhase,
+  fileDiffs: FileDiff[],
+  fileHunksMap: Map<string, ParsedHunk[]>,
+  allSteps: { id: string; title: string; phase: string }[],
+  model?: string,
+): Promise<NarrativeStep[]> {
+  const phaseFileSet = new Set(phase.steps.flatMap(s => s.files));
+  const phaseDiffs = fileDiffs.filter(fd => phaseFileSet.has(fd.file));
+
+  // If no diffs, return outline steps with empty descriptions
+  if (phaseDiffs.length === 0) {
+    return phase.steps.map(s => ({
+      id: s.id,
+      title: s.title,
+      description: '',
+      files: s.files.map(f => ({
+        file: f,
+        diff: reassembleDiff(f, fileHunksMap.get(f) ?? []),
+      })),
+    }));
+  }
+
+  // Build content with numbered hunks
+  const diffsContent = phaseDiffs.map(fd => {
+    const hunks = fileHunksMap.get(fd.file) ?? [];
+    if (hunks.length <= 1) {
+      return `### ${fd.file} (1 hunk)\n\`\`\`diff\n${fd.diff.slice(0, 6000)}\n\`\`\``;
+    }
+    const labeled = hunks.map((h, i) => {
+      const preview = h.lines.join('\n').slice(0, 3000);
+      return `**Hunk ${i}:**\n\`\`\`diff\n${preview}\n\`\`\``;
+    }).join('\n');
+    return `### ${fd.file} (${hunks.length} hunks)\n${labeled}`;
+  }).join('\n\n');
+
+  const stepOutline = phase.steps
+    .map(s => `- ${s.id}: "${s.title}" → ${s.files.join(', ')}`)
+    .join('\n');
+
+  const otherSteps = allSteps
+    .filter(s => !phase.steps.some(ps => ps.id === s.id))
+    .map(s => `${s.id} ("${s.title}", phase: ${s.phase})`)
+    .join(', ');
+
+  let text: string;
+  try {
+    text = await streamMessage(client, {
+      model: model || DEFAULT_MODEL,
+      max_tokens: 64_000,
+      system: PHASE_DETAIL_PROMPT,
+      messages: [{
+        role: 'user',
+        content: `Phase: "${phase.title}"\n\nStep outline:\n${stepOutline}\n\nOther steps for connections: ${otherSteps || 'none'}\n\nFull diffs:\n\n${diffsContent}`,
+      }],
+    });
+  } catch {
+    // On API failure, return outline steps with empty descriptions
+    return phase.steps.map(s => ({
+      id: s.id,
+      title: s.title,
+      description: '',
+      files: s.files.map(f => ({
+        file: f,
+        diff: reassembleDiff(f, fileHunksMap.get(f) ?? []),
+      })),
+    }));
+  }
+
+  let parsed: {
+    steps?: {
+      id?: string;
+      description?: string;
+      files?: (string | { file: string; hunks?: number[] })[];
+      connections?: string[];
+    }[];
+  };
+  try {
+    parsed = parseJsonLenient(text) as typeof parsed;
+  } catch {
+    // Fallback: outline steps without descriptions
+    return phase.steps.map(s => ({
+      id: s.id,
+      title: s.title,
+      description: '',
+      files: s.files.map(f => ({
+        file: f,
+        diff: reassembleDiff(f, fileHunksMap.get(f) ?? []),
+      })),
+    }));
+  }
+
+  // Build a map of detail results by step ID
+  const detailMap = new Map<string, {
+    description?: string;
+    files?: (string | { file: string; hunks?: number[] })[];
+    connections?: string[];
+  }>();
+  for (const s of parsed.steps ?? []) {
+    if (s.id) detailMap.set(s.id, s);
+  }
+
+  // Merge outline steps with detail results
+  return phase.steps.map(outlineStep => {
+    const detail = detailMap.get(outlineStep.id);
+
+    const stepFiles = (detail?.files ?? outlineStep.files.map(f => f))
+      .map(f => {
+        const fileName = typeof f === 'string' ? f : f.file;
+        const hunkIndices = typeof f === 'string' ? undefined : f.hunks;
+        return { fileName, hunkIndices };
+      })
+      .filter(f => phaseFileSet.has(f.fileName))
+      .map(({ fileName, hunkIndices }) => {
+        const allHunks = fileHunksMap.get(fileName) ?? [];
+        let diff: string;
+        if (hunkIndices && hunkIndices.length > 0 && allHunks.length > 1) {
+          const validIndices = hunkIndices.filter(i => i >= 0 && i < allHunks.length);
+          diff = validIndices.length > 0
+            ? reassembleDiff(fileName, validIndices.map(i => allHunks[i]))
+            : reassembleDiff(fileName, allHunks);
+        } else {
+          diff = reassembleDiff(fileName, allHunks);
+        }
+        return { file: fileName, diff, hunkIndices };
+      });
+
+    // Ensure all outline files are present even if detail didn't reference them
+    const detailFileSet = new Set(stepFiles.map(f => f.file));
+    for (const f of outlineStep.files) {
+      if (!detailFileSet.has(f)) {
+        stepFiles.push({
+          file: f,
+          diff: reassembleDiff(f, fileHunksMap.get(f) ?? []),
+          hunkIndices: undefined,
+        });
+      }
+    }
+
+    return {
+      id: outlineStep.id,
+      title: outlineStep.title,
+      description: detail?.description ?? '',
+      files: stepFiles,
+      connections: detail?.connections,
+    };
+  });
+}
+
+// --- Main entry point: two-stage pipeline ---
+
 export async function analyzeNarrative(
   apiKey: string,
   fileDiffs: FileDiff[],
   ticketContext?: TicketContext,
+  model?: string,
 ): Promise<NarrativeAnalysis> {
   if (fileDiffs.length === 0) {
     return { summary: 'No changes.', phases: [], filesAnalyzed: 0, totalAdditions: 0, totalDeletions: 0 };
@@ -361,186 +712,56 @@ export async function analyzeNarrative(
     fileHunksMap.set(fd.file, parseDiffIntoHunks(fd.diff));
   }
 
-  // Build user content with numbered hunks so the AI can reference them
-  const userContent = fileDiffs
-    .map((fd) => {
-      const hunks = fileHunksMap.get(fd.file) ?? [];
-      if (hunks.length <= 1) {
-        // Single hunk or no hunks — show as-is
-        return `### ${fd.file} (1 hunk)\n\`\`\`diff\n${fd.diff.slice(0, 6000)}\n\`\`\``;
-      }
-      // Label each hunk with its index
-      const labeled = hunks.map((h, i) => {
-        const preview = h.lines.join('\n').slice(0, 3000);
-        return `**Hunk ${i}:**\n\`\`\`diff\n${preview}\n\`\`\``;
-      }).join('\n');
-      return `### ${fd.file} (${hunks.length} hunks)\n${labeled}`;
-    })
-    .join('\n\n');
+  // Stage 1: Fast outline — abbreviated diffs, just structure + grouping
+  const outline = await getNarrativeOutline(client, fileDiffs, ticketContext, model);
 
-  let ticketSection = '';
-  if (ticketContext) {
-    ticketSection = `\n\nThis work is for ticket **${ticketContext.id}: ${ticketContext.title}**.${ticketContext.description ? `\n\nTicket description:\n${ticketContext.description.slice(0, 2000)}` : ''}\n\nRelate your narrative to this ticket — explain how each phase and step contributes to the ticket's goal.\n\n`;
-  }
+  // Build full step ID list for cross-phase connections
+  const allSteps = outline.phases.flatMap(p =>
+    p.steps.map(s => ({ id: s.id, title: s.title, phase: p.title }))
+  );
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 4096,
-    system: NARRATIVE_PROMPT,
-    messages: [
-      {
-        role: 'user',
-        content: `${ticketSection}Analyze these ${fileDiffs.length} changed files as a unified narrative:\n\n${userContent}`,
-      },
-    ],
-  });
+  // Stage 2: Parallel detail calls — one per phase, full diffs
+  const detailResults = await Promise.all(
+    outline.phases.map(phase =>
+      getPhaseDetails(client, phase, fileDiffs, fileHunksMap, allSteps, model)
+    )
+  );
 
-  const text = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map((b) => b.text)
-    .join('');
+  // Stage 3: Assemble final result
+  const allStepIds = new Set(allSteps.map(s => s.id));
 
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error('AI returned no valid JSON');
-  }
+  const phases: NarrativePhase[] = outline.phases.map((op, i) => ({
+    title: op.title,
+    labels: op.labels,
+    description: op.description,
+    steps: detailResults[i],
+  }));
 
-  // The AI now returns files as objects with hunk indices
-  const parsed = JSON.parse(jsonMatch[0]) as {
-    summary?: string;
-    phases?: {
-      title?: string;
-      labels?: string[];
-      description?: string;
-      steps?: {
-        id?: string;
-        title?: string;
-        description?: string;
-        files?: (string | { file: string; hunks?: number[] })[];
-        connections?: string[];
-      }[];
-    }[];
-    ticketCorrelation?: {
-      ticketId?: string;
-      ticketTitle?: string;
-      correlation?: string;
-      resolution?: string;
-    };
-  };
-
-  const allFiles = new Set(fileDiffs.map((f) => f.file));
-  const referencedFiles = new Set<string>();
-  const stepIds = new Set<string>();
-
-  // Post-process phases and steps, attaching only the relevant hunks
-  const phases: NarrativePhase[] = (parsed.phases ?? []).map((phase, pi) => {
-    const steps: NarrativeStep[] = (phase.steps ?? []).map((step, si) => {
-      const id = step.id || `phase-${pi}-step-${si}`;
-      stepIds.add(id);
-
-      const stepFiles = (step.files ?? [])
-        .map((f) => {
-          // Normalize: AI might return string or {file, hunks} object
-          const fileName = typeof f === 'string' ? f : f.file;
-          const hunkIndices = typeof f === 'string' ? undefined : f.hunks;
-          return { fileName, hunkIndices };
-        })
-        .filter((f) => allFiles.has(f.fileName))
-        .map(({ fileName, hunkIndices }) => {
-          referencedFiles.add(fileName);
-          const allHunks = fileHunksMap.get(fileName) ?? [];
-
-          let diff: string;
-          if (hunkIndices && hunkIndices.length > 0 && allHunks.length > 1) {
-            // Extract only the relevant hunks
-            const validIndices = hunkIndices.filter((i) => i >= 0 && i < allHunks.length);
-            if (validIndices.length > 0) {
-              const selected = validIndices.map((i) => allHunks[i]);
-              diff = reassembleDiff(fileName, selected);
-            } else {
-              diff = reassembleDiff(fileName, allHunks);
-            }
-          } else {
-            // Single hunk or no indices specified — use full diff
-            diff = reassembleDiff(fileName, allHunks);
-          }
-
-          return { file: fileName, diff, hunkIndices };
-        });
-
-      return {
-        id,
-        title: step.title ?? `Step ${si + 1}`,
-        description: step.description ?? '',
-        files: stepFiles,
-        connections: step.connections,
-      };
-    });
-
-    return {
-      title: phase.title ?? `Phase ${pi + 1}`,
-      labels: (phase.labels ?? []).filter((l) => typeof l === 'string' && l.trim()),
-      description: phase.description ?? '',
-      steps,
-    };
-  });
-
-  // Ensure all files are referenced — add unreferenced files to an "Other Changes" phase
-  const unreferenced = [...allFiles].filter((f) => !referencedFiles.has(f));
-  if (unreferenced.length > 0) {
-    phases.push({
-      title: 'Other Changes',
-      labels: [],
-      description: 'Additional files that were modified',
-      steps: unreferenced.map((f, i) => ({
-        id: `other-${i}`,
-        title: f.split('/').pop() ?? f,
-        description: `Changes to ${f}`,
-        files: [{ file: f, diff: reassembleDiff(f, fileHunksMap.get(f) ?? []) }],
-      })),
-    });
-  }
-
-  // Validate connection references — only keep valid step IDs
+  // Validate cross-phase connections
   for (const phase of phases) {
     for (const step of phase.steps) {
       if (step.connections) {
-        step.connections = step.connections.filter((c) => stepIds.has(c) && c !== step.id);
+        step.connections = step.connections.filter(c => allStepIds.has(c) && c !== step.id);
         if (step.connections.length === 0) delete step.connections;
       }
     }
   }
 
-  // Extract ticket correlation if the AI provided one.
-  // Always use the real ticket context for ID/title — never trust AI output for those.
-  let ticketCorrelation: TicketCorrelation | undefined;
-  if (parsed.ticketCorrelation && ticketContext) {
-    const tc = parsed.ticketCorrelation;
-    if (tc.correlation || tc.resolution) {
-      ticketCorrelation = {
-        ticketId: ticketContext.id,
-        ticketTitle: ticketContext.title,
-        correlation: tc.correlation ?? '',
-        resolution: tc.resolution ?? '',
-      };
-    }
-  }
-
   return {
-    summary: parsed.summary ?? '',
+    summary: outline.summary,
     phases,
-    filesAnalyzed: allFiles.size,
+    filesAnalyzed: fileDiffs.length,
     totalAdditions,
     totalDeletions,
-    ticketCorrelation,
+    ticketCorrelation: outline.ticketCorrelation,
   };
 }
 
-export async function validateApiKey(key: string): Promise<void> {
+export async function validateApiKey(key: string, model?: string): Promise<void> {
   const client = createClient(key);
   try {
     await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: model || DEFAULT_MODEL,
       max_tokens: 4,
       messages: [{ role: 'user', content: 'Say ok' }],
     });

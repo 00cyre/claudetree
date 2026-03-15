@@ -11,6 +11,7 @@ import { useWorktreeStatuses } from '@/hooks/useWorktreeStatuses';
 import { useLinear } from '@/hooks/useLinear';
 import { useFlags } from '@/hooks/useFlags';
 import { useDevStepper } from '@/hooks/useDevStepper';
+import { useWorktreeAttention } from '@/hooks/useWorktreeAttention';
 import { api } from '@/api/client';
 import type { AIStatus } from '@/types';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
@@ -106,6 +107,8 @@ export function App() {
     ? prWatcherStatuses.get(selectedWorktree.id) ?? null
     : null;
 
+  const { attention, clearAttention } = useWorktreeAttention(worktreeStatuses, prWatcherStatuses, selectedWorktree?.id);
+
   const { currentStep, goToStep, goNext, goPrev, overrides: stepOverrides } = useDevStepper(
     selectedWorktree?.id,
     currentPRWatcherStatus,
@@ -160,6 +163,8 @@ export function App() {
           currentStep={currentStep}
           onStepChange={goToStep}
           stepOverrides={stepOverrides}
+          attention={attention}
+          onClearAttention={clearAttention}
         />
 
         <AppHeader />

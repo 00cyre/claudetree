@@ -66,13 +66,6 @@ try {
     try {
       const worktrees = await discoverAllWorktrees();
       preInitializeSessions(worktrees.map((w) => ({ id: w.id, path: w.path })));
-
-      // Auto-detect PRs for all worktrees (replaces manual "PR OPEN" flag requirement)
-      const { startAutoScan } = await import('./pipeline/pr-watcher.js');
-      startAutoScan(async () => {
-        const wts = await discoverAllWorktrees();
-        return wts.map(w => ({ id: w.id, path: w.path, branch: w.branch }));
-      });
     } catch (err) {
       console.error('Failed to pre-initialize worktree terminals:', err);
     }
