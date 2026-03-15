@@ -40,9 +40,10 @@ interface NarrativeViewerProps {
   baseBranch: string;
   aiConnected: boolean;
   ticketContext?: TicketContext;
+  refreshKey?: number;
 }
 
-export function NarrativeViewer({ worktreeId, baseBranch, aiConnected, ticketContext }: NarrativeViewerProps) {
+export function NarrativeViewer({ worktreeId, baseBranch, aiConnected, ticketContext, refreshKey }: NarrativeViewerProps) {
   const [narrative, setNarrative] = useState<NarrativeAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,12 +64,19 @@ export function NarrativeViewer({ worktreeId, baseBranch, aiConnected, ticketCon
   }, [cacheKey]);
 
   // Fetch narrative — sends cached fingerprint so the backend can short-circuit
+  // refreshKey forces a fresh re-fetch (auto-review on idle, manual re-review button)
   useEffect(() => {
     if (!worktreeId || !aiConnected) return;
 
     let cancelled = false;
 
-    const persisted = loadFromStorage(cacheKey);
+    // When refreshKey changes (> 0), force a fresh analysis — clear local cache
+    const isForceRefresh = (refreshKey ?? 0) > 0;
+    if (isForceRefresh) {
+      removeFromStorage(cacheKey);
+    }
+
+    const persisted = isForceRefresh ? null : loadFromStorage(cacheKey);
     // Only show loading spinner if we have nothing to display yet
     if (!persisted) {
       setLoading(true);
@@ -109,7 +117,7 @@ export function NarrativeViewer({ worktreeId, baseBranch, aiConnected, ticketCon
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cacheKey, aiConnected]);
+  }, [cacheKey, aiConnected, refreshKey]);
 
   // Build step lookup across all phases
   const stepLookup = useMemo(() => {

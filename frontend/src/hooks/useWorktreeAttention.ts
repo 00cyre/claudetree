@@ -67,12 +67,15 @@ export function useWorktreeAttention(
             continue;
           }
 
-          // CI → passing: emerald (only if no amber already set)
+          // CI → passing: only notify if actionable (approved → ready to merge)
+          // Don't notify if just waiting for review or waiting for re-review after addressing changes
           if (prevPR.ciStatus !== 'passing' && currPR.ciStatus === 'passing') {
-            const existing = next.get(id);
-            if (!existing || existing.color !== 'amber') {
-              if (!changed) { next = new Map(next); changed = true; }
-              next.set(id, { color: 'emerald', reason: 'CI passed', timestamp: Date.now() });
+            if (currPR.reviewDecision === 'APPROVED') {
+              const existing = next.get(id);
+              if (!existing || existing.color !== 'amber') {
+                if (!changed) { next = new Map(next); changed = true; }
+                next.set(id, { color: 'emerald', reason: 'Ready to merge', timestamp: Date.now() });
+              }
             }
           }
         }

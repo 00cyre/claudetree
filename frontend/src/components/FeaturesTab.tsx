@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { TabbedTerminalView } from '@/components/TabbedTerminal';
 import { LinearTicketPanel } from '@/components/LinearTicketPanel';
 import { TerminalNotifications } from '@/components/TerminalNotifications';
@@ -10,6 +10,7 @@ import { extractTicketIdFromBranch } from '@/utils/linear';
 import type { Worktree, LinearIssue, LinearComment, PRWatcherStatus, PipelineStatus, DevStep, TicketContext, SessionStatus } from '@/types';
 import { Button } from '@/components/ui/button';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
+import { RefreshCw } from 'lucide-react';
 
 interface FeaturesTabProps {
   selectedWorktree: Worktree | null;
@@ -58,6 +59,32 @@ export function FeaturesTab({
 }: FeaturesTabProps) {
   const activeNotifications = prWatcherStatus?.notifications.filter((n) => !n.dismissed) ?? [];
   const mergedNotification = prWatcherStatus?.notifications.find(n => n.type === 'pr_merged');
+
+  // Review revision counter — incremented on session active→idle or manual re-review
+  const [reviewRevision, setReviewRevision] = useState(0);
+  const prevSessionStateRef = useRef<string | undefined>(undefined);
+
+  const currentSessionState = selectedWorktree
+    ? sessionStatuses.get(selectedWorktree.id)?.state
+    : undefined;
+
+  // Auto-refresh review when session transitions active→idle (Claude finished working)
+  useEffect(() => {
+    const prev = prevSessionStateRef.current;
+    prevSessionStateRef.current = currentSessionState;
+    if (prev === 'active' && currentSessionState === 'idle') {
+      setReviewRevision(r => r + 1);
+    }
+  }, [currentSessionState]);
+
+  // Reset revision when worktree changes
+  useEffect(() => {
+    setReviewRevision(0);
+  }, [selectedWorktree?.id]);
+
+  const handleReReview = useCallback(() => {
+    setReviewRevision(r => r + 1);
+  }, []);
 
   const ticketContext = useMemo<TicketContext | undefined>(() => {
     if (!issue || !selectedWorktree) return undefined;
@@ -132,11 +159,21 @@ export function FeaturesTab({
 
         {currentStep === 'review' && selectedWorktree && (
           <div className="flex-1 min-h-0 relative">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="absolute top-2 right-2 z-10 h-7 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+              onClick={handleReReview}
+            >
+              <RefreshCw className="size-3" />
+              Re-review
+            </Button>
             <NarrativeViewer
               worktreeId={selectedWorktree.id}
               baseBranch={baseBranch}
               aiConnected={aiConnected}
               ticketContext={ticketContext}
+              refreshKey={reviewRevision}
             />
             <ReviewToolbox
               worktreeId={selectedWorktree.id}
