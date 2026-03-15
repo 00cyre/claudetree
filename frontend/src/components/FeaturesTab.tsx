@@ -32,6 +32,7 @@ interface FeaturesTabProps {
   branches: string[];
   baseBranch: string;
   sessionStatuses: Map<string, SessionStatus>;
+  demoSlideKey?: number;
 }
 
 export function FeaturesTab({
@@ -55,6 +56,7 @@ export function FeaturesTab({
   branches,
   baseBranch,
   sessionStatuses,
+  demoSlideKey,
 }: FeaturesTabProps) {
   const activeNotifications = prWatcherStatus?.notifications.filter((n) => !n.dismissed) ?? [];
   const mergedNotification = prWatcherStatus?.notifications.find(n => n.type === 'pr_merged');
@@ -76,7 +78,7 @@ export function FeaturesTab({
               <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0">
                 <ResizablePanel id="terminal" className="min-h-0">
                   <div className="h-full min-h-0 flex flex-col relative">
-                    <TabbedTerminalView worktreeId={selectedWorktree?.id ?? null} sessionStatuses={sessionStatuses} onExit={onTerminalExit} />
+                    <TabbedTerminalView key={demoSlideKey} worktreeId={selectedWorktree?.id ?? null} sessionStatuses={sessionStatuses} onExit={onTerminalExit} />
                     {activeNotifications.length > 0 && onDismissPRNotification && (
                       <TerminalNotifications notifications={prWatcherStatus!.notifications} onDismiss={onDismissPRNotification} />
                     )}
@@ -121,7 +123,7 @@ export function FeaturesTab({
               </ResizablePanelGroup>
             ) : (
               <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden relative">
-                <TabbedTerminalView worktreeId={selectedWorktree?.id ?? null} sessionStatuses={sessionStatuses} onExit={onTerminalExit} />
+                <TabbedTerminalView key={demoSlideKey} worktreeId={selectedWorktree?.id ?? null} sessionStatuses={sessionStatuses} onExit={onTerminalExit} />
                 {activeNotifications.length > 0 && onDismissPRNotification && (
                   <TerminalNotifications notifications={prWatcherStatus!.notifications} onDismiss={onDismissPRNotification} />
                 )}
@@ -152,7 +154,7 @@ export function FeaturesTab({
         )}
 
         {currentStep === 'pr' && selectedWorktree && (
-          <PRReviewPanel worktreeId={selectedWorktree.id} reviewDecision={prWatcherStatus?.reviewDecision} />
+          <PRReviewPanel key={demoSlideKey} worktreeId={selectedWorktree.id} reviewDecision={prWatcherStatus?.reviewDecision} />
         )}
 
         {currentStep === 'pr' && !selectedWorktree && (

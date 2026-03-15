@@ -112,7 +112,13 @@ export function NarrativeViewer({ worktreeId, baseBranch, aiConnected, ticketCon
         }
       });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      // Reset inflight guard so a StrictMode remount (or real remount) can retry
+      if (inflightKeyRef.current === cacheKey) {
+        inflightKeyRef.current = null;
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cacheKey, aiConnected]);
 

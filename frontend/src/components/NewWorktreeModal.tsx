@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -10,6 +10,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
+export interface DemoModalValues {
+  name?: string;
+  linearIssueId?: string;
+  submit?: boolean;
+}
+
 interface NewWorktreeModalProps {
   onClose: () => void;
   onCreate: (name: string, linearIssueId?: string, baseBranch?: string) => Promise<void>;
@@ -17,6 +23,7 @@ interface NewWorktreeModalProps {
   hasProject: boolean;
   linearConnected: boolean;
   baseBranch?: string;
+  demoValues?: DemoModalValues;
 }
 
 function extractIssueId(input: string): string {
@@ -27,12 +34,19 @@ function extractIssueId(input: string): string {
   return trimmed;
 }
 
-export function NewWorktreeModal({ onClose, onCreate, onAddProject, hasProject, linearConnected, baseBranch }: NewWorktreeModalProps) {
+export function NewWorktreeModal({ onClose, onCreate, onAddProject, hasProject, linearConnected, baseBranch, demoValues }: NewWorktreeModalProps) {
   const [name, setName] = useState('');
   const [linearIssueId, setLinearIssueId] = useState('');
   const [projectPath, setProjectPath] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Demo mode: external control of form values
+  useEffect(() => {
+    if (!demoValues) return;
+    if (demoValues.name !== undefined) setName(demoValues.name);
+    if (demoValues.linearIssueId !== undefined) setLinearIssueId(demoValues.linearIssueId);
+  }, [demoValues, demoValues?.name, demoValues?.linearIssueId]);
 
   const handleCreate = async () => {
     if (!name.trim()) return;

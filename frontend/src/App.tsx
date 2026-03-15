@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { AppSidebar } from '@/components/Sidebar';
 import { FeaturesTab } from '@/components/FeaturesTab';
-import { NewWorktreeModal } from '@/components/NewWorktreeModal';
+import { NewWorktreeModal, type DemoModalValues } from '@/components/NewWorktreeModal';
 import { LinearSetupModal } from '@/components/LinearSetupModal';
 import { AnthropicSetupModal } from '@/components/AnthropicSetupModal';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -11,6 +11,9 @@ import { useWorktreeStatuses } from '@/hooks/useWorktreeStatuses';
 import { useLinear } from '@/hooks/useLinear';
 import { useFlags } from '@/hooks/useFlags';
 import { useDevStepper } from '@/hooks/useDevStepper';
+import { useDemoMode } from '@/demo/useDemoMode';
+import { DemoController } from '@/demo/DemoController';
+import { destroySession } from '@/lib/terminal-sessions';
 import { api } from '@/api/client';
 import type { AIStatus } from '@/types';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
@@ -129,6 +132,26 @@ export function App() {
     finally { setArchivingWorktree(false); }
   }, [selectedWorktree, deleteWorktree]);
 
+  // Demo mode
+  const demo = useDemoMode();
+  const [demoModalValues, setDemoModalValues] = useState<DemoModalValues | undefined>(undefined);
+
+  useEffect(() => {
+    if (!demo.active) return;
+    demo.bindCallbacks({
+      createWorktree,
+      goToStep,
+      refreshWorktrees: refresh,
+      openNewWorktreeModal: () => setShowModal(true),
+      closeNewWorktreeModal: () => {
+        setShowModal(false);
+        setDemoModalValues(undefined);
+      },
+      setModalFormValues: (values) => setDemoModalValues(values),
+      destroyTerminalSession: (worktreeId) => destroySession(worktreeId),
+    });
+  }, [demo.active, demo.bindCallbacks, goToStep, refresh, createWorktree]);
+
   return (
     <TooltipProvider>
       <SidebarProvider>
@@ -189,6 +212,7 @@ export function App() {
                   branches={branches}
                   baseBranch={baseBranch}
                   sessionStatuses={worktreeStatuses}
+                  demoSlideKey={demo.active ? demo.slideIndex : undefined}
                 />
               </div>
             </ErrorBoundary>
@@ -197,12 +221,13 @@ export function App() {
 
         {showModal && (
           <NewWorktreeModal
-            onClose={() => setShowModal(false)}
+            onClose={() => { setShowModal(false); setDemoModalValues(undefined); }}
             onCreate={createWorktree}
             onAddProject={addProject}
             hasProject={!!selectedProject}
             linearConnected={linearStatus.connected}
             baseBranch={baseBranch}
+            demoValues={demoModalValues}
           />
         )}
 
@@ -222,6 +247,15 @@ export function App() {
 
         {currentPipelineStatus && currentPipelineStatus.phase !== 'idle' && (
           <PipelineProgressTracker status={currentPipelineStatus} />
+        )}
+
+        {demo.active && (
+          <DemoController
+            phase={demo.phase}
+            slideIndex={demo.slideIndex}
+            onPrev={demo.prev}
+            onNext={demo.next}
+          />
         )}
 
       </SidebarProvider>

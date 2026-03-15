@@ -303,6 +303,16 @@ function SidebarStepper({
 }
 
 function ActivityLine({ status, pipelineStatus, prWatcherStatus }: { status: SessionStatus; pipelineStatus?: PipelineStatus; prWatcherStatus?: PRWatcherStatus }) {
+  // Show merged state
+  if (prWatcherStatus?.phase === 'stopped' && prWatcherStatus.notifications.some(n => n.type === 'pr_merged')) {
+    return (
+      <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+        <CheckCircle2 className="size-3 shrink-0" />
+        <span className="truncate">Merged</span>
+      </span>
+    );
+  }
+
   // PRWatcher takes priority when active
   if (prWatcherStatus && prWatcherStatus.phase !== 'stopped') {
     const info = derivePRLabel(prWatcherStatus);
@@ -538,91 +548,95 @@ function WorktreeItem({
         isActive={isActive}
         tooltip={wt.name}
       >
-        <div onClick={onSelect} className="h-auto py-1.5 pb-2 items-start cursor-pointer">
-          <div className="flex flex-col items-center gap-1 shrink-0 mt-0.5" onClick={(e) => e.stopPropagation()}>
-            <GripVertical className="size-3 text-muted-foreground/50 cursor-grab" />
-            <GitBranchIcon size={16} />
-            <Popover.Root>
-              <Popover.Trigger asChild>
-                <button
-                  className="size-5 flex items-center justify-center rounded text-muted-foreground"
-                  title="Set flags"
-                >
-                  <Tag className="size-3" />
-                </button>
-              </Popover.Trigger>
-              <Popover.Portal>
-                <Popover.Content
-                  side="right"
-                  align="start"
-                  sideOffset={4}
-                  className="z-50 rounded-lg border border-border bg-popover text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <FlagPicker
-                    worktreeFlags={wtFlags}
-                    allFlags={allFlags}
-                    onToggleFlag={toggleFlag}
-                    onCreateFlag={onCreateFlag}
-                  />
-                </Popover.Content>
-              </Popover.Portal>
-            </Popover.Root>
-          </div>
-          <div className="flex flex-col min-w-0 gap-[10px]">
-            <div className="flex items-center gap-1.5 min-w-0">
-              {status && (
-                <span className={cn(
-                  'size-2 rounded-full shrink-0',
-                  prWatcherStatus && prWatcherStatus.phase !== 'stopped'
-                    ? prWatcherDotStyle(prWatcherStatus)
-                    : pipelineStatus && pipelineStatus.phase !== 'idle'
-                      ? pipelineDotStyle(pipelineStatus.phase)
-                      : STATUS_DOT_STYLES[status.state],
-                )} />
+        <div onClick={onSelect} className="h-auto py-1.5 pb-2 flex-col !gap-1.5 cursor-pointer">
+          <div className="flex items-start gap-2 w-full">
+            <div className="flex flex-col items-center gap-1 shrink-0 mt-0.5" onClick={(e) => e.stopPropagation()}>
+              <GripVertical className="size-3 text-muted-foreground/50 cursor-grab" />
+              <GitBranchIcon size={16} />
+              <Popover.Root>
+                <Popover.Trigger asChild>
+                  <button
+                    className="size-5 flex items-center justify-center rounded text-muted-foreground"
+                    title="Set flags"
+                  >
+                    <Tag className="size-3" />
+                  </button>
+                </Popover.Trigger>
+                <Popover.Portal>
+                  <Popover.Content
+                    side="right"
+                    align="start"
+                    sideOffset={4}
+                    className="z-50 rounded-lg border border-border bg-popover text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <FlagPicker
+                      worktreeFlags={wtFlags}
+                      allFlags={allFlags}
+                      onToggleFlag={toggleFlag}
+                      onCreateFlag={onCreateFlag}
+                    />
+                  </Popover.Content>
+                </Popover.Portal>
+              </Popover.Root>
+            </div>
+            <div className="flex flex-col min-w-0 gap-[10px]">
+              <div className="flex items-center gap-1.5 min-w-0">
+                {status && (
+                  <span className={cn(
+                    'size-2 rounded-full shrink-0',
+                    prWatcherStatus?.phase === 'stopped' && prWatcherStatus.notifications.some(n => n.type === 'pr_merged')
+                      ? 'bg-emerald-400'
+                      : prWatcherStatus && prWatcherStatus.phase !== 'stopped'
+                        ? prWatcherDotStyle(prWatcherStatus)
+                        : pipelineStatus && pipelineStatus.phase !== 'idle'
+                          ? pipelineDotStyle(pipelineStatus.phase)
+                          : STATUS_DOT_STYLES[status.state],
+                  )} />
+                )}
+                <span className="truncate text-sm leading-tight">{wt.name}</span>
+              </div>
+              {ticketId && (
+                <span className="text-[10px] text-muted-foreground truncate leading-tight" title={ticketId}>
+                  {ticketId}
+                </span>
               )}
-              <span className="truncate text-sm leading-tight">{wt.name}</span>
+              {description && (
+                <span className="text-[10px] text-muted-foreground/80 truncate leading-tight italic" title={description}>
+                  {description}
+                </span>
+              )}
+              {flagDefs.length > 0 && (
+                <div className="flex gap-1 flex-wrap mt-0.5">
+                  {flagDefs.map((f) => (
+                    <Badge key={f.name} variant="outline" className="h-4 text-[9px] px-1.5 gap-1 group/flag">
+                      <span className="size-1.5 rounded-full shrink-0" style={{ backgroundColor: f.color }} />
+                      {f.name}
+                      <button
+                        className="size-3 flex items-center justify-center rounded-full hover:bg-muted-foreground/20 -mr-0.5 shrink-0"
+                        onClick={(e) => { e.stopPropagation(); toggleFlag(f.name); }}
+                        title={`Remove ${f.name}`}
+                      >
+                        <X className="size-2" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              {status && (
+                <div className="text-[10px] leading-tight">
+                  <ActivityLine status={status} pipelineStatus={pipelineStatus} prWatcherStatus={prWatcherStatus} />
+                </div>
+              )}
             </div>
-            {ticketId && (
-              <span className="text-[10px] text-muted-foreground truncate leading-tight" title={ticketId}>
-                {ticketId}
-              </span>
-            )}
-            {description && (
-              <span className="text-[10px] text-muted-foreground/80 truncate leading-tight italic" title={description}>
-                {description}
-              </span>
-            )}
-            {flagDefs.length > 0 && (
-              <div className="flex gap-1 flex-wrap mt-0.5">
-                {flagDefs.map((f) => (
-                  <Badge key={f.name} variant="outline" className="h-4 text-[9px] px-1.5 gap-1 group/flag">
-                    <span className="size-1.5 rounded-full shrink-0" style={{ backgroundColor: f.color }} />
-                    {f.name}
-                    <button
-                      className="size-3 flex items-center justify-center rounded-full hover:bg-muted-foreground/20 -mr-0.5 shrink-0"
-                      onClick={(e) => { e.stopPropagation(); toggleFlag(f.name); }}
-                      title={`Remove ${f.name}`}
-                    >
-                      <X className="size-2" />
-                    </button>
-                  </Badge>
-                ))}
-              </div>
-            )}
-            {status && (
-              <div className="text-[10px] leading-tight">
-                <ActivityLine status={status} pipelineStatus={pipelineStatus} prWatcherStatus={prWatcherStatus} />
-              </div>
-            )}
-            <div onClick={(e) => e.stopPropagation()}>
-              <SidebarStepper
-                currentStep={currentStep ?? derivedStep}
-                onStepClick={isActive ? onStepClick : undefined}
-                prWatcherStatus={prWatcherStatus}
-                sessionStatus={status}
-              />
-            </div>
+          </div>
+          <div onClick={(e) => e.stopPropagation()} className="w-full">
+            <SidebarStepper
+              currentStep={currentStep ?? derivedStep}
+              onStepClick={isActive ? onStepClick : undefined}
+              prWatcherStatus={prWatcherStatus}
+              sessionStatus={status}
+            />
           </div>
         </div>
       </SidebarMenuButton>

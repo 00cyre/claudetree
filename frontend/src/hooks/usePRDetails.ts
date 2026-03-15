@@ -15,6 +15,14 @@ const REFRESH_DELAY_MS = 3_000; // Wait 3s after mount before background refresh
 const POLL_INTERVAL_MS = 60_000; // Poll every 60s for ongoing updates
 const SETTLE_MS = 400; // Debounce rapid worktree switches
 
+export function clearPRDetailsCache(worktreeId?: string) {
+  if (worktreeId) {
+    cache.delete(worktreeId);
+  } else {
+    cache.clear();
+  }
+}
+
 export function usePRDetails(worktreeId: string) {
   const cached = cache.get(worktreeId);
   const [data, setData] = useState<PRDetailedData | null>(cached?.data ?? null);
@@ -71,30 +79,35 @@ export function usePRDetails(worktreeId: string) {
       }
     }
 
-    // Debounce: wait for user to settle on this worktree
-    settleTimer = setTimeout(() => {
-      if (cancelled) return;
-
-      const isStale = !entry || (Date.now() - entry.fetchedAt > STALE_THRESHOLD_MS);
-
-      if (!entry) {
-        // No cache — fetch immediately (loading skeleton is showing)
-        fetchData(false);
-      } else if (isStale) {
-        // Cache exists but stale — background refresh
-        fetchData(true);
-      } else {
-        // Fresh cache — schedule a delayed refresh
-        refreshTimer = setTimeout(() => {
-          if (!cancelled) fetchData(true);
-        }, REFRESH_DELAY_MS);
-      }
-
-      // Start polling for ongoing updates
+    // No cache — fetch right away (loading skeleton is already showing)
+    if (!entry) {
+      fetchData(false);
       pollTimer = setInterval(() => {
         if (!cancelled) fetchData(true);
       }, POLL_INTERVAL_MS);
-    }, SETTLE_MS);
+    } else {
+      // Debounce: wait for user to settle on this worktree
+      settleTimer = setTimeout(() => {
+        if (cancelled) return;
+
+        const isStale = Date.now() - entry.fetchedAt > STALE_THRESHOLD_MS;
+
+        if (isStale) {
+          // Cache exists but stale — background refresh
+          fetchData(true);
+        } else {
+          // Fresh cache — schedule a delayed refresh
+          refreshTimer = setTimeout(() => {
+            if (!cancelled) fetchData(true);
+          }, REFRESH_DELAY_MS);
+        }
+
+        // Start polling for ongoing updates
+        pollTimer = setInterval(() => {
+          if (!cancelled) fetchData(true);
+        }, POLL_INTERVAL_MS);
+      }, SETTLE_MS);
+    }
 
     return () => {
       cancelled = true;
