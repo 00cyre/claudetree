@@ -2,6 +2,21 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import type { DevStep, PRWatcherStatus } from '@/types';
 
 const STEPS: DevStep[] = ['dev', 'review', 'pr', 'merged'];
+const OVERRIDES_KEY = 'claudetree:stepOverrides';
+
+function loadOverrides(): Map<string, DevStep> {
+  try {
+    const raw = localStorage.getItem(OVERRIDES_KEY);
+    if (!raw) return new Map();
+    return new Map(Object.entries(JSON.parse(raw)) as [string, DevStep][]);
+  } catch { return new Map(); }
+}
+
+function saveOverrides(overrides: Map<string, DevStep>): void {
+  try {
+    localStorage.setItem(OVERRIDES_KEY, JSON.stringify(Object.fromEntries(overrides)));
+  } catch { /* ignore */ }
+}
 
 export function deriveDevStep(
   prWatcherStatus: PRWatcherStatus | null | undefined,
@@ -47,7 +62,14 @@ export function useDevStepper(
 ) {
   const autoStep = deriveDevStep(prWatcherStatus);
   const reachable = reachableSteps(prWatcherStatus);
-  const [overrides, setOverrides] = useState<Map<string, DevStep>>(new Map());
+  const [overrides, setOverridesRaw] = useState<Map<string, DevStep>>(loadOverrides);
+  const setOverrides = useCallback((updater: (prev: Map<string, DevStep>) => Map<string, DevStep>) => {
+    setOverridesRaw((prev) => {
+      const next = updater(prev);
+      saveOverrides(next);
+      return next;
+    });
+  }, []);
   const prevAutoRef = useRef(autoStep);
   const prevWorktreeRef = useRef(worktreeId);
 

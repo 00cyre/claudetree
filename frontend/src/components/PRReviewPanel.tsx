@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import Markdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 import { api } from '@/api/client';
@@ -20,7 +20,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { BlueprintCard } from '@/components/ui/blueprint-card';
 import { DotCard } from '@/components/ui/dot-card';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
-import { GitPullRequest, CheckCircle2, AlertCircle, Circle, ArrowRight, MessageSquare, BotMessageSquare } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { GitPullRequest, CheckCircle2, AlertCircle, Circle, ArrowRight, MessageSquare, BotMessageSquare, Reply, Send, ExternalLink } from 'lucide-react';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
 
@@ -269,13 +270,74 @@ function overallReviewLabel(decision?: PRReviewDecision): { text: string; classN
   }
 }
 
+function CommentReplyBox({
+  worktreeId,
+  commentId,
+  onPosted,
+}: {
+  worktreeId: string;
+  commentId?: string;
+  onPosted?: () => void;
+}) {
+  const [text, setText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    if (!text.trim() || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await api.postPRComment(worktreeId, text.trim(), commentId);
+      setText('');
+      onPosted?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <Textarea
+        className="text-xs min-h-[60px] resize-none"
+        placeholder={commentId ? 'Write a reply...' : 'Add a comment...'}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            handleSubmit();
+          }
+        }}
+      />
+      {error && <p className="text-[10px] text-red-500">{error}</p>}
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant="default"
+          className="gap-1.5 text-xs h-7"
+          disabled={!text.trim() || submitting}
+          onClick={handleSubmit}
+        >
+          <Send className="size-3" />
+          {submitting ? 'Posting...' : commentId ? 'Reply' : 'Comment'}
+        </Button>
+        <span className="text-[10px] text-muted-foreground">Ctrl+Enter to submit</span>
+      </div>
+    </div>
+  );
+}
+
 interface PRReviewPanelProps {
   worktreeId: string;
   reviewDecision?: PRReviewDecision;
 }
 
 export function PRReviewPanel({ worktreeId, reviewDecision }: PRReviewPanelProps) {
-  const { data, loading, refreshing, error } = usePRDetails(worktreeId);
+  const { data, loading, refreshing, error, refresh } = usePRDetails(worktreeId);
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
 
   const handleAddressWithAI = useCallback(async (commentBody: string, filePath?: string, line?: number) => {
     const location = filePath ? `\nFile: ${filePath}${line ? `:${line}` : ''}` : '';
@@ -313,11 +375,36 @@ export function PRReviewPanel({ worktreeId, reviewDecision }: PRReviewPanelProps
     <div className="flex flex-col h-full min-w-0 overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-border min-w-0">
-        <GitPullRequest className="size-5 text-blue-500 shrink-0" />
+        <a href={data.url} target="_blank" rel="noopener noreferrer" className="shrink-0 hover:opacity-80 transition-opacity">
+          <GitPullRequest className="size-5 text-blue-500" />
+        </a>
         <div className="flex flex-col min-w-0 flex-1">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="font-semibold text-sm shrink-0">PR #{data.number}</span>
-            <span className="text-xs text-muted-foreground truncate">{data.title}</span>
+            <a
+              href={data.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold text-sm shrink-0 hover:text-primary hover:underline transition-colors"
+            >
+              PR #{data.number}
+            </a>
+            <a
+              href={data.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-muted-foreground truncate hover:text-foreground hover:underline transition-colors"
+            >
+              {data.title}
+            </a>
+            <a
+              href={data.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+              title="Open in GitHub"
+            >
+              <ExternalLink className="size-3.5" />
+            </a>
             {refreshing && <Spinner className="size-3 shrink-0" />}
           </div>
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -474,18 +561,48 @@ export function PRReviewPanel({ worktreeId, reviewDecision }: PRReviewPanelProps
                     <div className="min-w-0">
                       <Markdown rehypePlugins={[rehypeRaw]} components={commentMarkdownComponents}>{preprocessVideoReferences(c.body)}</Markdown>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-1.5 w-full text-xs"
-                      onClick={() => handleAddressWithAI(c.body, c.path, c.line)}
-                    >
-                      <BotMessageSquare className="size-3.5" />
-                      Autofix
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 flex-1 text-xs"
+                        onClick={() => handleAddressWithAI(c.body, c.path, c.line)}
+                      >
+                        <BotMessageSquare className="size-3.5" />
+                        Autofix
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 flex-1 text-xs"
+                        onClick={() => setReplyingTo(replyingTo === c.id ? null : c.id)}
+                      >
+                        <Reply className="size-3.5" />
+                        Reply
+                      </Button>
+                    </div>
+                    {replyingTo === c.id && (
+                      <CommentReplyBox
+                        worktreeId={worktreeId}
+                        commentId={c.id}
+                        onPosted={() => {
+                          setReplyingTo(null);
+                          refresh();
+                        }}
+                      />
+                    )}
                   </div>
                 </DotCard>
               ))}
+
+              {/* General comment box */}
+              <div className="pt-2 border-t border-border max-w-[734px]">
+                <p className="text-xs font-medium mb-2">Add a comment</p>
+                <CommentReplyBox
+                  worktreeId={worktreeId}
+                  onPosted={refresh}
+                />
+              </div>
             </div>
           </ScrollArea>
         </ResizablePanel>

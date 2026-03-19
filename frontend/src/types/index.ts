@@ -14,6 +14,12 @@ export interface Worktree {
   linearIssueId?: string;
   description?: string;
   flags?: string[];
+  folderId?: string;
+}
+
+export interface Folder {
+  id: string;
+  name: string;
 }
 
 export interface Flag {

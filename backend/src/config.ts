@@ -32,11 +32,17 @@ export interface WorktreeLink {
   description?: string;
   linearIssueTitle?: string;
   flags?: string[];
+  folderId?: string;
 }
 
 export interface Flag {
   name: string;
   color: string;
+}
+
+export interface Folder {
+  id: string;
+  name: string;
 }
 
 export interface AppConfig {
@@ -47,6 +53,8 @@ export interface AppConfig {
   worktreeLinks?: Record<string, WorktreeLink>;
   flags?: Flag[];
   worktreeOrder?: Record<string, string[]>;
+  folders?: Record<string, Folder[]>;
+  folderOrder?: Record<string, string[]>;
 }
 
 interface SharedConfig {
@@ -63,6 +71,8 @@ interface InstanceConfig {
   worktreeLinks?: Record<string, WorktreeLink>;
   flags?: Flag[];
   worktreeOrder?: Record<string, string[]>;
+  folders?: Record<string, Folder[]>;
+  folderOrder?: Record<string, string[]>;
 }
 
 function ensureDir(dir: string): void {
@@ -130,6 +140,8 @@ export function loadConfig(): AppConfig {
     worktreeLinks: instance.worktreeLinks,
     flags: instance.flags,
     worktreeOrder: instance.worktreeOrder,
+    folders: instance.folders,
+    folderOrder: instance.folderOrder,
   };
 }
 
@@ -151,6 +163,8 @@ export function saveConfig(config: AppConfig): void {
     worktreeLinks: config.worktreeLinks,
     flags: config.flags,
     worktreeOrder: config.worktreeOrder,
+    folders: config.folders,
+    folderOrder: config.folderOrder,
   };
   // Preserve instance-level API key overrides if set
   const prev = readJson<InstanceConfig>(INSTANCE_FILE);
@@ -224,5 +238,61 @@ export function setWorktreeOrder(projectId: string, order: string[]): void {
   const config = loadConfig();
   if (!config.worktreeOrder) config.worktreeOrder = {};
   config.worktreeOrder[projectId] = order;
+  saveConfig(config);
+}
+
+// --- Folder helpers ---
+
+export function getFolders(projectId: string): Folder[] {
+  return loadConfig().folders?.[projectId] ?? [];
+}
+
+export function addFolder(projectId: string, folder: Folder): void {
+  const config = loadConfig();
+  if (!config.folders) config.folders = {};
+  if (!config.folders[projectId]) config.folders[projectId] = [];
+  config.folders[projectId].push(folder);
+  saveConfig(config);
+}
+
+export function updateFolder(projectId: string, folderId: string, name: string): void {
+  const config = loadConfig();
+  const folders = config.folders?.[projectId];
+  if (!folders) return;
+  const folder = folders.find((f) => f.id === folderId);
+  if (folder) {
+    folder.name = name;
+    saveConfig(config);
+  }
+}
+
+export function removeFolder(projectId: string, folderId: string): void {
+  const config = loadConfig();
+  if (config.folders?.[projectId]) {
+    config.folders[projectId] = config.folders[projectId].filter((f) => f.id !== folderId);
+  }
+  // Clear folderId from all worktreeLinks
+  if (config.worktreeLinks) {
+    for (const link of Object.values(config.worktreeLinks)) {
+      if (link.folderId === folderId) {
+        delete link.folderId;
+      }
+    }
+  }
+  // Remove from folderOrder
+  if (config.folderOrder?.[projectId]) {
+    config.folderOrder[projectId] = config.folderOrder[projectId].filter((id) => id !== folderId);
+  }
+  saveConfig(config);
+}
+
+export function getFolderOrder(projectId: string): string[] {
+  return loadConfig().folderOrder?.[projectId] ?? [];
+}
+
+export function setFolderOrder(projectId: string, order: string[]): void {
+  const config = loadConfig();
+  if (!config.folderOrder) config.folderOrder = {};
+  config.folderOrder[projectId] = order;
   saveConfig(config);
 }

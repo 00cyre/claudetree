@@ -1,13 +1,35 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Project, Worktree } from '../types/index.js';
 import { api } from '../api/client.js';
+
+const SELECTED_WT_KEY = 'claudetree:selectedWorktreeId';
+
+function loadSelectedWorktreeId(): string | null {
+  try { return localStorage.getItem(SELECTED_WT_KEY); } catch { return null; }
+}
+
+function saveSelectedWorktreeId(id: string | null): void {
+  try {
+    if (id) localStorage.setItem(SELECTED_WT_KEY, id);
+    else localStorage.removeItem(SELECTED_WT_KEY);
+  } catch { /* ignore */ }
+}
 
 export function useWorktrees() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
-  const [selectedWorktree, setSelectedWorktree] = useState<Worktree | null>(null);
+  const [selectedWorktree, setSelectedWorktreeRaw] = useState<Worktree | null>(null);
   const [loading, setLoading] = useState(false);
+  const restoredRef = useRef(false);
+
+  const setSelectedWorktree = useCallback((wt: Worktree | null | ((prev: Worktree | null) => Worktree | null)) => {
+    setSelectedWorktreeRaw((prev) => {
+      const next = typeof wt === 'function' ? wt(prev) : wt;
+      saveSelectedWorktreeId(next?.id ?? null);
+      return next;
+    });
+  }, []);
 
   const loadProjects = useCallback(async () => {
     try {
@@ -41,6 +63,17 @@ export function useWorktrees() {
   useEffect(() => {
     loadWorktrees();
   }, [loadWorktrees]);
+
+  // Restore previously selected worktree after initial load
+  useEffect(() => {
+    if (restoredRef.current || worktrees.length === 0 || selectedWorktree) return;
+    restoredRef.current = true;
+    const savedId = loadSelectedWorktreeId();
+    if (savedId) {
+      const found = worktrees.find((w) => w.id === savedId);
+      if (found) setSelectedWorktree(found);
+    }
+  }, [worktrees, selectedWorktree, setSelectedWorktree]);
 
   const addProject = async (path: string) => {
     const project = await api.addProject(path);
@@ -79,6 +112,13 @@ export function useWorktrees() {
     setWorktrees((prev) => prev.map((w) => w.id === worktreeId ? { ...w, flags } : w));
   }, []);
 
+  const setWorktreeFolder = useCallback(async (worktreeId: string, folderId: string | null) => {
+    await api.setWorktreeFolder(worktreeId, folderId);
+    setWorktrees((prev) => prev.map((w) =>
+      w.id === worktreeId ? { ...w, folderId: folderId ?? undefined } : w
+    ));
+  }, []);
+
   return {
     projects,
     selectedProject,
@@ -92,6 +132,7 @@ export function useWorktrees() {
     deleteWorktree,
     reorderWorktrees,
     setWorktreeFlags,
+    setWorktreeFolder,
     refresh: loadWorktrees,
   };
 }

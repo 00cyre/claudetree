@@ -1,10 +1,10 @@
 import { Router, Request, Response } from 'express';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { existsSync, mkdirSync, cpSync } from 'fs';
 import { join } from 'path';
 import simpleGit from 'simple-git';
-import { loadConfig, saveConfig, getWorktreeLink, setWorktreeLink, removeWorktreeLink, getFlags, addFlag, removeFlag, getWorktreeOrder, setWorktreeOrder } from '../config.js';
-import type { Flag } from '../config.js';
+import { loadConfig, saveConfig, getWorktreeLink, setWorktreeLink, removeWorktreeLink, getFlags, addFlag, removeFlag, getWorktreeOrder, setWorktreeOrder, getFolders, addFolder, updateFolder, removeFolder, getFolderOrder, setFolderOrder } from '../config.js';
+import type { Flag, Folder } from '../config.js';
 import { linearClient } from '../linear/client.js';
 
 const router = Router();
@@ -18,6 +18,7 @@ interface Worktree {
   linearIssueId?: string;
   description?: string;
   flags?: string[];
+  folderId?: string;
 }
 
 function stableId(path: string): string {
@@ -53,7 +54,7 @@ export async function discoverAllWorktrees(): Promise<Worktree[]> {
           const id = stableId(wtPath);
           const link = getWorktreeLink(wtPath);
           const description = link?.description ?? link?.linearIssueTitle;
-          const wt: Worktree = { id, name: branch, path: wtPath, branch, projectId: project.id, linearIssueId: link?.linearIssueId, description, flags: link?.flags };
+          const wt: Worktree = { id, name: branch, path: wtPath, branch, projectId: project.id, linearIssueId: link?.linearIssueId, description, flags: link?.flags, folderId: link?.folderId };
           worktreeRegistry.set(id, wt);
           allWorktrees.push(wt);
         }
@@ -95,6 +96,83 @@ router.delete('/meta/flags/:name', async (req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
+// --- Folder CRUD (must be before /:projectId to avoid param collision) ---
+
+router.get('/:projectId/folders', (req: Request, res: Response) => {
+  const projectId = req.params.projectId;
+  const folders = getFolders(projectId);
+  const order = getFolderOrder(projectId);
+  if (order.length > 0) {
+    folders.sort((a, b) => {
+      const ai = order.indexOf(a.id);
+      const bi = order.indexOf(b.id);
+      return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+    });
+  }
+  res.json(folders);
+});
+
+router.post('/:projectId/folders', (req: Request, res: Response) => {
+  const { name } = req.body as { name: string };
+  if (!name?.trim()) {
+    res.status(400).json({ error: 'name is required' });
+    return;
+  }
+  const id = randomUUID().slice(0, 8);
+  const folder: Folder = { id, name: name.trim() };
+  addFolder(req.params.projectId, folder);
+  // Append to folderOrder
+  const order = getFolderOrder(req.params.projectId);
+  setFolderOrder(req.params.projectId, [...order, id]);
+  res.status(201).json(folder);
+});
+
+router.put('/:projectId/folders/order', (req: Request, res: Response) => {
+  const { order } = req.body as { order: string[] };
+  if (!Array.isArray(order)) {
+    res.status(400).json({ error: 'order must be an array of folder IDs' });
+    return;
+  }
+  setFolderOrder(req.params.projectId, order);
+  res.json({ ok: true });
+});
+
+router.put('/:projectId/folders/:folderId', (req: Request, res: Response) => {
+  const { name } = req.body as { name: string };
+  if (!name?.trim()) {
+    res.status(400).json({ error: 'name is required' });
+    return;
+  }
+  updateFolder(req.params.projectId, req.params.folderId, name.trim());
+  res.json({ ok: true });
+});
+
+router.delete('/:projectId/folders/:folderId', (req: Request, res: Response) => {
+  removeFolder(req.params.projectId, req.params.folderId);
+  res.json({ ok: true });
+});
+
+// --- Worktree folder assignment ---
+
+router.put('/:worktreeId/folder', (req: Request, res: Response) => {
+  const wt = worktreeRegistry.get(req.params.worktreeId);
+  if (!wt) {
+    res.status(404).json({ error: 'Worktree not found' });
+    return;
+  }
+  const { folderId } = req.body as { folderId: string | null };
+  const existing = getWorktreeLink(wt.path) ?? {};
+  if (folderId) {
+    setWorktreeLink(wt.path, { ...existing, folderId });
+    wt.folderId = folderId;
+  } else {
+    delete existing.folderId;
+    setWorktreeLink(wt.path, existing);
+    delete wt.folderId;
+  }
+  res.json({ ok: true });
+});
+
 router.get('/:projectId/branches', async (req: Request, res: Response) => {
   const { projectId } = req.params;
   const config = loadConfig();
@@ -106,7 +184,7 @@ router.get('/:projectId/branches', async (req: Request, res: Response) => {
 
   try {
     const git = simpleGit(project.path);
-    await git.fetch('origin');
+    await git.fetch(['origin', '--prune']);
     const result = await git.raw(['branch', '-r', '--format=%(refname:short)']);
     const branches = result
       .split('\n')
@@ -143,7 +221,7 @@ router.get('/:projectId', async (req: Request, res: Response) => {
         const id = stableId(wtPath);
         const link = getWorktreeLink(wtPath);
         const description = link?.description ?? link?.linearIssueTitle;
-        const wt: Worktree = { id, name: branch, path: wtPath, branch, projectId, linearIssueId: link?.linearIssueId, description, flags: link?.flags };
+        const wt: Worktree = { id, name: branch, path: wtPath, branch, projectId, linearIssueId: link?.linearIssueId, description, flags: link?.flags, folderId: link?.folderId };
         worktreeRegistry.set(id, wt);
         worktrees.push(wt);
       }

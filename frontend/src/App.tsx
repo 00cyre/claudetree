@@ -10,6 +10,7 @@ import { useWorktrees } from '@/hooks/useWorktrees';
 import { useWorktreeStatuses } from '@/hooks/useWorktreeStatuses';
 import { useLinear } from '@/hooks/useLinear';
 import { useFlags } from '@/hooks/useFlags';
+import { useFolders } from '@/hooks/useFolders';
 import { useDevStepper } from '@/hooks/useDevStepper';
 import { useWorktreeAttention } from '@/hooks/useWorktreeAttention';
 import { api } from '@/api/client';
@@ -52,10 +53,12 @@ export function App() {
     deleteWorktree,
     reorderWorktrees,
     setWorktreeFlags,
+    setWorktreeFolder,
     refresh,
   } = useWorktrees();
 
   const { flags, createFlag } = useFlags();
+  const { folders, createFolder, updateFolder, deleteFolder, reorderFolders } = useFolders(selectedProject?.id);
 
   const { sessions: worktreeStatuses, pipelines: pipelineStatuses, prWatchers: prWatcherStatuses } = useWorktreeStatuses();
 
@@ -165,6 +168,12 @@ export function App() {
           stepOverrides={stepOverrides}
           attention={attention}
           onClearAttention={clearAttention}
+          folders={folders}
+          onCreateFolder={createFolder}
+          onUpdateFolder={updateFolder}
+          onDeleteFolder={deleteFolder}
+          onReorderFolders={reorderFolders}
+          onSetWorktreeFolder={setWorktreeFolder}
         />
 
         <AppHeader />

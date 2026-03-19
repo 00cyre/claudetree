@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '@/api/client';
 import type { PRDetailedData } from '@/types';
 
@@ -104,5 +104,24 @@ export function usePRDetails(worktreeId: string) {
     };
   }, [worktreeId]);
 
-  return { data, loading, refreshing, error };
+  const refresh = useCallback(() => {
+    cache.delete(worktreeId);
+    setRefreshing(true);
+    api.getPRDetails(worktreeId)
+      .then((result) => {
+        if (worktreeIdRef.current !== worktreeId) return;
+        cache.set(worktreeId, { data: result, fetchedAt: Date.now() });
+        setData(result);
+        setError(null);
+      })
+      .catch((err) => {
+        if (worktreeIdRef.current !== worktreeId) return;
+        // Keep showing existing data
+      })
+      .finally(() => {
+        if (worktreeIdRef.current === worktreeId) setRefreshing(false);
+      });
+  }, [worktreeId]);
+
+  return { data, loading, refreshing, error, refresh };
 }

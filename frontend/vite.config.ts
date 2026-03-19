@@ -22,8 +22,8 @@ function readBackendPort(): Promise<number> {
 
       attempt++;
       if (attempt >= maxAttempts) {
-        console.warn('Could not read .claudetree-port, falling back to 3001');
-        resolve(3001);
+        console.warn('Could not read .claudetree-port, falling back to 6661');
+        resolve(6661);
       } else {
         setTimeout(tryRead, interval);
       }
@@ -35,7 +35,7 @@ function readBackendPort(): Promise<number> {
 
 export default defineConfig(async () => {
   const backendPort = await readBackendPort();
-  const frontendPort = parseInt(process.env.CLAUDETREE_FRONTEND_PORT || '5173', 10);
+  const frontendPort = parseInt(process.env.CLAUDETREE_FRONTEND_PORT || '6660', 10);
 
   return {
     plugins: [react()],

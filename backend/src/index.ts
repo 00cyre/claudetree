@@ -17,7 +17,7 @@ import { linearClient } from './linear/client.js';
 import { loadConfig, getInstanceName, ensureDefaultFlags } from './config.js';
 import { findFreePort, writePortFile, registerPortFileCleanup } from './port.js';
 
-const DEFAULT_PORT = parseInt(process.env.CLAUDETREE_PORT || '3001', 10);
+const DEFAULT_PORT = parseInt(process.env.CLAUDETREE_PORT || '6661', 10);
 
 const app = express();
 

@@ -1,9 +1,9 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
-import type { Project, Worktree, Flag, LinearStatus, AIStatus, SessionStatus, ClaudeActivityState, PipelineStatus, PRWatcherStatus, DevStep, AttentionState } from '@/types';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import type { Project, Worktree, Flag, Folder, LinearStatus, AIStatus, SessionStatus, ClaudeActivityState, PipelineStatus, PRWatcherStatus, DevStep, AttentionState } from '@/types';
 import { extractTicketIdFromBranch } from '@/utils/linear';
 import { deriveDevStep, reachableSteps } from '@/hooks/useDevStepper';
 import { Stepper, useStepperCtx, stepDefs } from '@/lib/stepper';
-import { X, Link2, Folder, CheckCircle2, AlertCircle, Circle, GripVertical, Tag, Plus, GitPullRequest, Terminal, GitMerge, Check, FileSearch } from 'lucide-react';
+import { X, Link2, Folder as FolderIcon, FolderPlus, ChevronRight, CheckCircle2, AlertCircle, Circle, GripVertical, Tag, Plus, MoreHorizontal, GitPullRequest, Terminal, GitMerge, Check, FileSearch } from 'lucide-react';
 import { GitBranchIcon } from '@/components/ui/git-branch';
 import { PlusIcon } from '@/components/ui/plus';
 import { BotIcon } from '@/components/ui/bot';
@@ -475,6 +475,77 @@ function FlagPicker({
   );
 }
 
+// --- Folder Picker Popover ---
+
+function FolderPicker({
+  currentFolderId,
+  folders,
+  onSelectFolder,
+}: {
+  currentFolderId?: string;
+  folders: Folder[];
+  onSelectFolder: (folderId: string | null) => void;
+}) {
+  return (
+    <div className="w-44 p-2 space-y-1">
+      <button
+        className={cn(
+          'flex items-center gap-2 w-full px-2 py-1 rounded text-xs hover:bg-muted transition-colors text-left',
+          !currentFolderId && 'bg-muted',
+        )}
+        onClick={() => onSelectFolder(null)}
+      >
+        <span className="truncate text-muted-foreground">No folder</span>
+        {!currentFolderId && <CheckCircle2 className="size-3 ml-auto shrink-0 text-primary" />}
+      </button>
+      {folders.map((f) => (
+        <button
+          key={f.id}
+          className={cn(
+            'flex items-center gap-2 w-full px-2 py-1 rounded text-xs hover:bg-muted transition-colors text-left',
+            currentFolderId === f.id && 'bg-muted',
+          )}
+          onClick={() => onSelectFolder(f.id)}
+        >
+          <FolderIcon className="size-3 shrink-0 text-muted-foreground" />
+          <span className="truncate">{f.name}</span>
+          {currentFolderId === f.id && <CheckCircle2 className="size-3 ml-auto shrink-0 text-primary" />}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// --- Collapsed folders (localStorage) ---
+
+function useCollapsedFolders(projectId?: string): { collapsed: Set<string>; toggle: (id: string) => void } {
+  const key = `claudetree:collapsed:${projectId ?? ''}`;
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem(key);
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch { return new Set(); }
+  });
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(key);
+      setCollapsed(stored ? new Set(JSON.parse(stored)) : new Set());
+    } catch { setCollapsed(new Set()); }
+  }, [key]);
+
+  const toggle = useCallback((id: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      try { localStorage.setItem(key, JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  }, [key]);
+
+  return { collapsed, toggle };
+}
+
 // --- Worktree Item ---
 
 function WorktreeItem({
@@ -484,6 +555,7 @@ function WorktreeItem({
   pipelineStatus,
   prWatcherStatus,
   allFlags,
+  allFolders,
   currentStep,
   attention,
   onStepClick,
@@ -491,6 +563,7 @@ function WorktreeItem({
   onDelete,
   onSetFlags,
   onCreateFlag,
+  onSetFolder,
   onDragStart,
   onDragOver,
   onDrop,
@@ -502,6 +575,7 @@ function WorktreeItem({
   pipelineStatus?: PipelineStatus;
   prWatcherStatus?: PRWatcherStatus;
   allFlags: Flag[];
+  allFolders?: Folder[];
   currentStep?: DevStep;
   attention?: AttentionState;
   onStepClick?: (step: DevStep) => void;
@@ -509,6 +583,7 @@ function WorktreeItem({
   onDelete: () => void;
   onSetFlags: (flags: string[]) => void;
   onCreateFlag: (name: string, color: string) => void;
+  onSetFolder?: (folderId: string | null) => void;
   onDragStart: (e: React.DragEvent) => void;
   onDragOver: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent) => void;
@@ -574,6 +649,33 @@ function WorktreeItem({
                 </Popover.Content>
               </Popover.Portal>
             </Popover.Root>
+            {allFolders && allFolders.length > 0 && onSetFolder && (
+              <Popover.Root>
+                <Popover.Trigger asChild>
+                  <button
+                    className="size-5 flex items-center justify-center rounded text-muted-foreground"
+                    title="Set folder"
+                  >
+                    <FolderIcon className="size-3" />
+                  </button>
+                </Popover.Trigger>
+                <Popover.Portal>
+                  <Popover.Content
+                    side="right"
+                    align="start"
+                    sideOffset={4}
+                    className="z-50 rounded-lg border border-border bg-popover text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <FolderPicker
+                      currentFolderId={wt.folderId}
+                      folders={allFolders}
+                      onSelectFolder={onSetFolder}
+                    />
+                  </Popover.Content>
+                </Popover.Portal>
+              </Popover.Root>
+            )}
           </div>
           <div className="flex flex-col min-w-0 gap-[10px]">
             <div className="flex items-center gap-1.5 min-w-0">
@@ -645,6 +747,153 @@ function WorktreeItem({
   );
 }
 
+// --- Folder Section ---
+
+function FolderSection({
+  folder,
+  isCollapsed,
+  onToggleCollapse,
+  onRename,
+  onDelete,
+  onDropWorktree,
+  onFolderDragStart,
+  onFolderDragOver,
+  onFolderDrop,
+  onFolderDragEnd,
+  dragIndicator,
+  children,
+}: {
+  folder: Folder;
+  isCollapsed: boolean;
+  onToggleCollapse: () => void;
+  onRename: (name: string) => void;
+  onDelete: () => void;
+  onDropWorktree: (worktreeId: string) => void;
+  onFolderDragStart: (e: React.DragEvent) => void;
+  onFolderDragOver: (e: React.DragEvent) => void;
+  onFolderDrop: (e: React.DragEvent) => void;
+  onFolderDragEnd: () => void;
+  dragIndicator?: boolean;
+  children: React.ReactNode;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(folder.name);
+  const [showMenu, setShowMenu] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const childCount = Array.isArray(children) ? children.length : (children ? 1 : 0);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+
+  const commitRename = () => {
+    const trimmed = editName.trim();
+    if (trimmed && trimmed !== folder.name) onRename(trimmed);
+    setEditing(false);
+  };
+
+  return (
+    <div
+      className={cn(
+        'mt-1',
+        dragOver && 'ring-1 ring-primary rounded-md',
+        dragIndicator && 'border-t-2 border-primary',
+      )}
+      draggable
+      onDragStart={onFolderDragStart}
+      onDragEnd={onFolderDragEnd}
+      onDragOver={(e) => {
+        // Folder reorder takes priority
+        onFolderDragOver(e);
+        // Also accept worktree drops
+        if (!e.defaultPrevented) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+        }
+        setDragOver(true);
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragOver(false);
+        // If this is a folder reorder, handle that
+        if (e.dataTransfer.types.includes('text/folder-drag')) {
+          onFolderDrop(e);
+          return;
+        }
+        const worktreeId = e.dataTransfer.getData('text/worktree-id');
+        if (worktreeId) onDropWorktree(worktreeId);
+      }}
+    >
+      <div className="flex items-center gap-1 px-2 py-1 group/folder cursor-grab">
+        <button
+          className="size-4 flex items-center justify-center text-muted-foreground shrink-0"
+          onClick={onToggleCollapse}
+        >
+          <ChevronRight className={cn('size-3 transition-transform', !isCollapsed && 'rotate-90')} />
+        </button>
+        <FolderIcon className="size-3 text-muted-foreground shrink-0" />
+        {editing ? (
+          <Input
+            ref={inputRef}
+            className="h-5 text-xs flex-1 px-1"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setEditing(false); }}
+          />
+        ) : (
+          <span
+            className="text-xs font-medium text-muted-foreground truncate flex-1 cursor-pointer"
+            onDoubleClick={() => { setEditName(folder.name); setEditing(true); }}
+          >
+            {folder.name}
+          </span>
+        )}
+        <span className="text-[10px] text-muted-foreground/60 shrink-0">{childCount}</span>
+        <Popover.Root open={showMenu} onOpenChange={setShowMenu}>
+          <Popover.Trigger asChild>
+            <button
+              className="size-4 flex items-center justify-center rounded text-muted-foreground opacity-0 group-hover/folder:opacity-100 transition-opacity"
+              title="Folder options"
+            >
+              <MoreHorizontal className="size-3" />
+            </button>
+          </Popover.Trigger>
+          <Popover.Portal>
+            <Popover.Content
+              side="right"
+              align="start"
+              sideOffset={4}
+              className="z-50 rounded-lg border border-border bg-popover text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95 p-1 w-32"
+            >
+              <button
+                className="flex items-center gap-2 w-full px-2 py-1 rounded text-xs hover:bg-muted transition-colors text-left"
+                onClick={() => { setShowMenu(false); setEditName(folder.name); setEditing(true); }}
+              >
+                Rename
+              </button>
+              <button
+                className="flex items-center gap-2 w-full px-2 py-1 rounded text-xs hover:bg-muted transition-colors text-left text-destructive"
+                onClick={() => { setShowMenu(false); onDelete(); }}
+              >
+                Delete
+              </button>
+            </Popover.Content>
+          </Popover.Portal>
+        </Popover.Root>
+      </div>
+      {!isCollapsed && (
+        <div className="ml-3 border-l border-border/50 pl-1">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- Main Sidebar ---
 
 export interface SidebarProps {
@@ -677,6 +926,12 @@ export interface SidebarProps {
   stepOverrides?: Map<string, DevStep>;
   attention?: Map<string, AttentionState>;
   onClearAttention?: (id: string) => void;
+  folders?: Folder[];
+  onCreateFolder?: (name: string) => void;
+  onUpdateFolder?: (folderId: string, name: string) => void;
+  onDeleteFolder?: (folderId: string) => void;
+  onReorderFolders?: (folders: Folder[]) => void;
+  onSetWorktreeFolder?: (worktreeId: string, folderId: string | null) => void;
 }
 
 export function AppSidebar({
@@ -709,6 +964,12 @@ export function AppSidebar({
   stepOverrides,
   attention,
   onClearAttention,
+  folders,
+  onCreateFolder,
+  onUpdateFolder,
+  onDeleteFolder,
+  onReorderFolders,
+  onSetWorktreeFolder,
 }: SidebarProps) {
   const { state } = useSidebar();
   const collapsed = state === 'collapsed';
@@ -716,9 +977,27 @@ export function AppSidebar({
   const dragOverItem = useRef<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
-  const handleDragStart = useCallback((idx: number) => (e: React.DragEvent) => {
+  const { collapsed: collapsedFolders, toggle: toggleFolder } = useCollapsedFolders(selectedProject?.id);
+
+  const { unfiledWorktrees, folderGroups } = useMemo(() => {
+    const unfiled = worktrees.filter((w) => !w.folderId);
+    const grouped = new Map<string, Worktree[]>();
+    for (const wt of worktrees) {
+      if (wt.folderId) {
+        const arr = grouped.get(wt.folderId) || [];
+        arr.push(wt);
+        grouped.set(wt.folderId, arr);
+      }
+    }
+    return { unfiledWorktrees: unfiled, folderGroups: grouped };
+  }, [worktrees]);
+
+  const orderedFolders = useMemo(() => folders ?? [], [folders]);
+
+  const handleDragStart = useCallback((idx: number, worktreeId?: string) => (e: React.DragEvent) => {
     dragItem.current = idx;
     e.dataTransfer.effectAllowed = 'move';
+    if (worktreeId) e.dataTransfer.setData('text/worktree-id', worktreeId);
   }, []);
 
   const handleDragOver = useCallback((idx: number) => (e: React.DragEvent) => {
@@ -728,7 +1007,8 @@ export function AppSidebar({
     setDragOverIdx(idx);
   }, []);
 
-  const handleDrop = useCallback(() => {
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.stopPropagation();
     if (dragItem.current === null || dragOverItem.current === null || dragItem.current === dragOverItem.current) return;
     const reordered = [...worktrees];
     const [moved] = reordered.splice(dragItem.current, 1);
@@ -745,12 +1025,52 @@ export function AppSidebar({
     setDragOverIdx(null);
   }, []);
 
+  // Folder drag-and-drop reorder
+  const dragFolder = useRef<number | null>(null);
+  const dragOverFolder = useRef<number | null>(null);
+  const [dragOverFolderIdx, setDragOverFolderIdx] = useState<number | null>(null);
+
+  const handleFolderDragStart = useCallback((idx: number) => (e: React.DragEvent) => {
+    dragFolder.current = idx;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/folder-drag', 'true');
+  }, []);
+
+  const handleFolderDragOver = useCallback((idx: number) => (e: React.DragEvent) => {
+    // Only show folder reorder indicator if dragging a folder, not a worktree
+    if (e.dataTransfer.types.includes('text/folder-drag')) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'move';
+      dragOverFolder.current = idx;
+      setDragOverFolderIdx(idx);
+    }
+  }, []);
+
+  const handleFolderDrop = useCallback((e: React.DragEvent) => {
+    e.stopPropagation();
+    if (dragFolder.current === null || dragOverFolder.current === null || dragFolder.current === dragOverFolder.current) return;
+    const reordered = [...orderedFolders];
+    const [moved] = reordered.splice(dragFolder.current, 1);
+    reordered.splice(dragOverFolder.current, 0, moved);
+    onReorderFolders?.(reordered);
+    dragFolder.current = null;
+    dragOverFolder.current = null;
+    setDragOverFolderIdx(null);
+  }, [orderedFolders, onReorderFolders]);
+
+  const handleFolderDragEnd = useCallback(() => {
+    dragFolder.current = null;
+    dragOverFolder.current = null;
+    setDragOverFolderIdx(null);
+  }, []);
+
   return (
     <SidebarRoot side="left" collapsible="icon" variant="floating">
       <SidebarHeader>
         {collapsed ? (
           <div className="flex justify-center py-1">
-            <Folder className="size-4 text-muted-foreground" />
+            <FolderIcon className="size-4 text-muted-foreground" />
           </div>
         ) : (
           <div className="space-y-2">
@@ -776,7 +1096,7 @@ export function AppSidebar({
                   <SelectTrigger className="h-7 text-xs">
                     <SelectValue placeholder="Select branch" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="popper" className="max-h-60">
                     {[baseBranch, ...branches.filter((b) => b !== baseBranch)].map((b) => (
                       <SelectItem key={b} value={b}>{b}</SelectItem>
                     ))}
@@ -800,17 +1120,82 @@ export function AppSidebar({
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel>Worktrees</SidebarGroupLabel>
-          <SidebarGroupAction title="New worktree" onClick={onNewWorktree}>
+          <SidebarGroupAction title="New worktree" onClick={onNewWorktree} className="right-1">
             <PlusIcon size={16} />
           </SidebarGroupAction>
+          {onCreateFolder && (
+            <SidebarGroupAction
+              title="New folder"
+              onClick={() => onCreateFolder('New Folder')}
+              className="right-7"
+            >
+              <FolderPlus className="size-4" />
+            </SidebarGroupAction>
+          )}
           <SidebarGroupContent>
             {loading ? (
               <div className="px-2 py-2 text-sm text-muted-foreground">Loading...</div>
             ) : worktrees.length === 0 ? (
               <div className="px-2 py-2 text-sm text-muted-foreground">No worktrees</div>
             ) : (
-              <SidebarMenu className="gap-1.5">
-                {worktrees.map((wt, idx) => (
+              <SidebarMenu
+                className="gap-3 p-3"
+                onDragOver={(e) => {
+                  // Allow dropping in unfiled zone
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                }}
+                onDrop={(e) => {
+                  e.stopPropagation();
+                  const worktreeId = e.dataTransfer.getData('text/worktree-id');
+                  if (worktreeId && onSetWorktreeFolder) {
+                    onSetWorktreeFolder(worktreeId, null);
+                  }
+                }}
+              >
+                {orderedFolders.map((folder, folderIdx) => (
+                  <FolderSection
+                    key={folder.id}
+                    folder={folder}
+                    isCollapsed={collapsedFolders.has(folder.id)}
+                    onToggleCollapse={() => toggleFolder(folder.id)}
+                    onRename={(name) => onUpdateFolder?.(folder.id, name)}
+                    onDelete={() => onDeleteFolder?.(folder.id)}
+                    onDropWorktree={(worktreeId) => onSetWorktreeFolder?.(worktreeId, folder.id)}
+                    onFolderDragStart={handleFolderDragStart(folderIdx)}
+                    onFolderDragOver={handleFolderDragOver(folderIdx)}
+                    onFolderDrop={handleFolderDrop}
+                    onFolderDragEnd={handleFolderDragEnd}
+                    dragIndicator={dragOverFolderIdx === folderIdx && dragFolder.current !== folderIdx}
+                  >
+                    {(folderGroups.get(folder.id) || []).map((wt, idx) => (
+                      <div key={wt.id}>
+                        <WorktreeItem
+                          wt={wt}
+                          isActive={selectedWorktree?.id === wt.id}
+                          status={statuses.get(wt.id)}
+                          pipelineStatus={pipelineStatuses.get(wt.id)}
+                          prWatcherStatus={prWatcherStatuses.get(wt.id)}
+                          allFlags={flags}
+                          allFolders={orderedFolders}
+                          currentStep={selectedWorktree?.id === wt.id ? currentStep : stepOverrides?.get(wt.id)}
+                          attention={attention?.get(wt.id)}
+                          onStepClick={selectedWorktree?.id === wt.id ? onStepChange : undefined}
+                          onSelect={() => { onClearAttention?.(wt.id); onSelectWorktree(wt); }}
+                          onDelete={() => onDeleteWorktree(wt.id)}
+                          onSetFlags={(f) => onSetWorktreeFlags(wt.id, f)}
+                          onCreateFlag={onCreateFlag}
+                          onSetFolder={onSetWorktreeFolder ? (fId) => onSetWorktreeFolder(wt.id, fId) : undefined}
+                          onDragStart={handleDragStart(idx, wt.id)}
+                          onDragOver={handleDragOver(idx)}
+                          onDrop={handleDrop}
+                          onDragEnd={handleDragEnd}
+                        />
+                      </div>
+                    ))}
+                  </FolderSection>
+                ))}
+                {unfiledWorktrees.map((wt, idx) => (
                   <div
                     key={wt.id}
                     className={cn(
@@ -825,6 +1210,7 @@ export function AppSidebar({
                       pipelineStatus={pipelineStatuses.get(wt.id)}
                       prWatcherStatus={prWatcherStatuses.get(wt.id)}
                       allFlags={flags}
+                      allFolders={orderedFolders}
                       currentStep={selectedWorktree?.id === wt.id ? currentStep : stepOverrides?.get(wt.id)}
                       attention={attention?.get(wt.id)}
                       onStepClick={selectedWorktree?.id === wt.id ? onStepChange : undefined}
@@ -832,7 +1218,8 @@ export function AppSidebar({
                       onDelete={() => onDeleteWorktree(wt.id)}
                       onSetFlags={(f) => onSetWorktreeFlags(wt.id, f)}
                       onCreateFlag={onCreateFlag}
-                      onDragStart={handleDragStart(idx)}
+                      onSetFolder={onSetWorktreeFolder ? (fId) => onSetWorktreeFolder(wt.id, fId) : undefined}
+                      onDragStart={handleDragStart(idx, wt.id)}
                       onDragOver={handleDragOver(idx)}
                       onDrop={handleDrop}
                       onDragEnd={handleDragEnd}

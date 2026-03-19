@@ -44,7 +44,7 @@ export function ReviewToolbox({ worktreeId, branches }: ReviewToolboxProps) {
           <SelectTrigger className="h-7 text-xs rounded-full min-w-[100px]">
             <SelectValue placeholder="Branch" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent position="popper" className="max-h-60">
             {branches.map((b) => (
               <SelectItem key={b} value={b}>{b}</SelectItem>
             ))}

@@ -1,4 +1,4 @@
-import type { Project, Worktree, DiffResult, FileDiff, LinearIssue, LinearComment, LinearStatus, AIStatus, FileAnalysis, FileDetailedAnalysis, TicketContext, PipelineStatus, PRWatcherStatus, BranchDiffResult, NarrativeAnalysis, Flag, PRDetailedData } from '../types/index.js';
+import type { Project, Worktree, DiffResult, FileDiff, LinearIssue, LinearComment, LinearStatus, AIStatus, FileAnalysis, FileDetailedAnalysis, TicketContext, PipelineStatus, PRWatcherStatus, BranchDiffResult, NarrativeAnalysis, Flag, Folder, PRDetailedData } from '../types/index.js';
 
 const BASE = '/api';
 
@@ -146,6 +146,39 @@ export const api = {
       method: 'DELETE',
     }),
 
+  // Folders
+  getFolders: (projectId: string) =>
+    request<Folder[]>(`/worktrees/${projectId}/folders`),
+
+  createFolder: (projectId: string, name: string) =>
+    request<Folder>(`/worktrees/${projectId}/folders`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+
+  updateFolder: (projectId: string, folderId: string, name: string) =>
+    request<{ ok: boolean }>(`/worktrees/${projectId}/folders/${folderId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    }),
+
+  deleteFolder: (projectId: string, folderId: string) =>
+    request<{ ok: boolean }>(`/worktrees/${projectId}/folders/${folderId}`, {
+      method: 'DELETE',
+    }),
+
+  setFolderOrder: (projectId: string, order: string[]) =>
+    request<{ ok: boolean }>(`/worktrees/${projectId}/folders/order`, {
+      method: 'PUT',
+      body: JSON.stringify({ order }),
+    }),
+
+  setWorktreeFolder: (worktreeId: string, folderId: string | null) =>
+    request<{ ok: boolean }>(`/worktrees/${worktreeId}/folder`, {
+      method: 'PUT',
+      body: JSON.stringify({ folderId }),
+    }),
+
   // PR Watcher
   getPRWatcherStatus: (worktreeId: string) =>
     request<PRWatcherStatus | null>(`/pr-watcher/${worktreeId}`),
@@ -157,4 +190,10 @@ export const api = {
 
   getPRDetails: (worktreeId: string) =>
     request<PRDetailedData>(`/pr-watcher/${worktreeId}/details`),
+
+  postPRComment: (worktreeId: string, body: string, replyToCommentId?: string) =>
+    request<{ ok: boolean }>(`/pr-watcher/${worktreeId}/comment`, {
+      method: 'POST',
+      body: JSON.stringify({ body, replyToCommentId }),
+    }),
 };
